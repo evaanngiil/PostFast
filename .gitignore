@@ -11,13 +11,8 @@ lib/
 var/
 MANIFEST
 
-# PyInstaller
-*.manifest
-*.spec
-
-# Installer logs
-pip-log.txt
-pip-delete-this-directory.txt
+# Vscode settings
+.vscode/
 
 # poetry
 poetry.lock
@@ -25,8 +20,5 @@ poetry.lock
 # Environments
 .env
 .venv
-env/
-venv/
-ENV/
 env.bak/
 venv.bak/
