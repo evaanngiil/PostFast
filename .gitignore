@@ -22,3 +22,5 @@ poetry.lock
 .venv
 env.bak/
 venv.bak/
+
+example.txt
