@@ -83,7 +83,7 @@ sentiment_prompt = PromptTemplate(
     template=sentiment_template
 )
 
-# Create the chain -> LLMChain is deprecated so we use the | operator to chain the prompts using the order: prompt | llm where prompt is the prompt template and llm is the language model in the last position always
+# Create the chain -> LLMChain is deprecated so we use the | operator to chain the prompts using the order: prompt | llm where prompt is the prompt template and llm is the language model. The prompt has to be the first element in the chain.
 sentiment_chain = sentiment_prompt | llm
 
 # Execute the chain
