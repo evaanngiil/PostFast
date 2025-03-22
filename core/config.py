@@ -2,11 +2,11 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from src.core.logget import logger
-from src.core.utils import load_yaml_files
+from logger import logger
+from utils import load_yaml_files
 
 class ConfigLoader:
-    _instance
+    _instance = None
 
     def __new__(cls, *args, **kwargs):
         if not cls._instance:
@@ -22,7 +22,7 @@ class ConfigLoader:
     def load_config(self):
         """Load configuration from yaml files and env variables"""
         try:
-          cofig_path = Path(__file__).parent.parent.parent / "config" 
+          config_path = Path(__file__).parent.parent.parent / "config" 
 
           if not config_path.exists():
               logger.error("Configuration path {config_path} does not exist")
