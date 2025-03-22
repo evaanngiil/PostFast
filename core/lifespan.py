@@ -2,8 +2,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langgraph.checkpoint.memory import MemorySaver
 
-from src.core.logget import logger
-from src.agents.agentes_prueba.agent_1 import sentiment_chain
+from logger import logger
+from agents.agentes_prueba.agent_1 import sentiment_chain
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
