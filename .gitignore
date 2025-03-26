@@ -24,3 +24,4 @@ env.bak/
 venv.bak/
 
 example.txt
+.langgraph_api
