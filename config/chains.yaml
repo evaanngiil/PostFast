@@ -1,0 +1,8 @@
+sample:
+  sample_chain:
+    llm: gemini:gemini-2.0-flash # llama:llama-2-7b-chat para el llm local de llama
+    llm_params:
+      temperature: 0.8
+      max_tokens: 256
+      top_p: 0.85
+    prompt: "Eres humorista profesional especializado en chistes de humor negro. Y debes de responder de la mejor manera posible a la siguiente pregunta: {question}"
