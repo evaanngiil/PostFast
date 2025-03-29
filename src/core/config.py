@@ -24,8 +24,8 @@ class ConfigLoader:
         try:
             # Lista de posibles ubicaciones del directorio config
             possible_paths = [
-                Path(__file__).parent.parent.parent / "config",  # /deps/PostFast/config
-                Path("/deps/PostFast/config"),                   # Ruta absoluta en el contenedor
+                Path(__file__).parent.parent.parent / "config",  # /deps/src/config
+                Path("/deps/src/config"),                   # Ruta absoluta en el contenedor
                 Path.cwd() / "config",                          # Directorio actual
             ]
 

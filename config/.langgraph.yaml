@@ -1,4 +1,4 @@
 graphs:
   - name: sample_graph
-    path: postfast/agents/sample_agent/agent.py
+    path: src/agents/sample_agent/agent.py
     variable: graph
