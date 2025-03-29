@@ -6,7 +6,7 @@ from langchain.chains import LLMChain
 from langchain_openai import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 
-from postfast.core.logger import logger
+from src.core.logger import logger
 
 # Load environment variables
 load_dotenv()

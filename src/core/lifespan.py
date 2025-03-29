@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
-from postfast.core.logger import logger
-from postfast.agents.sample_agent.agent import create_workflow
+from src.core.logger import logger
+from src.agents.sample_agent.agent import create_workflow
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

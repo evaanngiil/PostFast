@@ -4,8 +4,8 @@ from langchain_community.llms import llamacpp
 from langchain_core.language_models import BaseLanguageModel
 from langchain_openai import OpenAI
 
-from postfast.core.constants import GENAI_API_KEY
-from postfast.core.logger import logger
+from src.core.constants import GENAI_API_KEY
+from src.core.logger import logger
 
 class LLMFactory:
     _providers = {

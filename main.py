@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from postfast.routers.router import router
-from postfast.core.lifespan import lifespan
-from postfast.core.logger import logger
+from src.routers.router import router
+from src.core.lifespan import lifespan
+from src.core.logger import logger
 
 app = FastAPI(
     title="PostFast API",

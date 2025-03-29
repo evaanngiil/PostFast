@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 from langchain_core.messages import HumanMessage
-from postfast.core.logger import logger
+from src.core.logger import logger
 
 router = APIRouter()
 

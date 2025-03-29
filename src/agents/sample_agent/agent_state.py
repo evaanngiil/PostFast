@@ -4,11 +4,9 @@ from langgraph.graph import MessagesState
 class InputState(MessagesState):
     pass
 
-class InternalState(TypedDict):
-    pass
+class InternalState(MessagesState):
+    output: str
 
 class OutputState(TypedDict):
     output: str
 
-class AgentState(InputState, InternalState, OutputState):
-    pass

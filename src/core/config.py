@@ -2,8 +2,8 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from postfast.core.logger import logger
-from postfast.core.utils import load_yaml_files
+from src.core.logger import logger
+from src.core.utils import load_yaml_files
 
 class ConfigLoader:
     _instance = None

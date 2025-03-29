@@ -3,7 +3,7 @@ import yaml
 import logging
 from pathlib import Path
 
-from postfast.core.logger import logger
+from src.core.logger import logger
 
 def load_yaml_files(path: Path) -> dict:
     """

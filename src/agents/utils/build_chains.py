@@ -1,6 +1,6 @@
-from postfast.core.config import get_config
-from postfast.core.logger import logger
-from postfast.agents.utils.chain_factory import ChainOutputWithoutParser
+from src.core.config import get_config
+from src.core.logger import logger
+from src.agents.utils.chain_factory import ChainOutputWithoutParser
 
 try:
     sample_chain = ChainOutputWithoutParser(

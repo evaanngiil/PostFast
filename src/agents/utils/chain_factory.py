@@ -2,8 +2,8 @@ from abc import ABC, abstractmethod
 from langchain_core.output_parsers import StrOutputParser
 from langchain.prompts import PromptTemplate
 
-from postfast.core.logger import logger
-from postfast.agents.utils.llm_factory import LLMFactory
+from src.core.logger import logger
+from src.agents.utils.llm_factory import LLMFactory
 
 class BaseChain(ABC):
     def __init__(self, chain_config: dict, tools: list = None):

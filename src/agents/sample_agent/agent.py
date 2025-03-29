@@ -5,15 +5,15 @@ from langgraph.types import Checkpointer
 from langgraph.prebuilt import ToolNode
 import asyncio
 
-from postfast.agents.sample_agent.agent_state import AgentState, InputState, OutputState
-from postfast.agents.sample_agent.nodes.executor import execute
-from postfast.core.logger import logger
+from src.agents.sample_agent.agent_state import InputState, OutputState, InternalState
+from src.agents.sample_agent.nodes.executor import execute
+from src.core.logger import logger
 
 def create_workflow(checkpointer: Checkpointer = None):
     """Create the workflow graph synchronously."""
     try:
         logger.info("Creating workflow graph...")
-        workflow = StateGraph(AgentState, input=InputState, output=OutputState)
+        workflow = StateGraph(InternalState, input=InputState, output=OutputState)
         workflow.add_node("execute", execute)
 
         workflow.add_edge(START, "execute")
@@ -22,6 +22,7 @@ def create_workflow(checkpointer: Checkpointer = None):
         if checkpointer is None:
             checkpointer = MemorySaver()
         compiled_graph = workflow.compile(checkpointer=checkpointer)
+
         logger.info("Workflow graph created successfully")
         return compiled_graph
     except Exception as e:

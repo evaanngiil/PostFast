@@ -2,15 +2,19 @@ from typing import Optional
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import HumanMessage, AIMessage
 
-from postfast.agents.sample_agent.agent_state import AgentState
-from postfast.agents.utils.build_chains import sample_chain
-from postfast.core.logger import logger
+from src.agents.sample_agent.agent_state import InputState, InternalState, OutputState
+from src.agents.utils.build_chains import sample_chain
+from src.core.logger import logger
 
-async def execute(state: AgentState, config: Optional[RunnableConfig] = None):
+async def execute(state: InputState, config: Optional[RunnableConfig] = None):
     try:
         logger.info("🔄 Ejecutando nodo `execute_sample_chain`...")
 
         messages = state.get("messages", [])
+
+        for message in messages:
+            print("Input state messages: \n")
+            logger.debug(message.pretty_print())
 
         if not messages or not isinstance(messages[-1], HumanMessage):
             raise ValueError("❌ El último mensaje no es un HumanMessage válido")
@@ -32,7 +36,7 @@ async def execute(state: AgentState, config: Optional[RunnableConfig] = None):
 
         # Devolver la respuesta en el formato correcto para el estado del agente
         return {
-            "messages":ai_response,
+            "messages": ai_response,
             "output": ai_response.content
         }
 
