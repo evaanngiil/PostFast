@@ -1,6 +1,6 @@
 from src.celery_app import celery_app
 from src.core.logger import logger
-from src.data_processing import (transform_and_load_facebook, transform_and_load_instagram, transform_and_load_linkedin, get_db_connection)
+from src.data_processing import ( transform_and_load_instagram, transform_and_load_linkedin, get_db_connection)
 from src.social_apis import (
      get_instagram_insights, get_linkedin_page_insights,
     post_to_instagram, post_to_linkedin_organization
