@@ -25,3 +25,6 @@ venv.bak/
 
 example.txt
 .langgraph_api
+
+socialmedia*
+code_*
