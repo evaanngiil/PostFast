@@ -21,7 +21,7 @@ from src.core.logger import logger
 try:
     from src.auth import (
         initialize_session_state,
-        verify_session_on_load, # <-- NUEVO: Para verificar en cada carga
+        verify_session_on_load, # <-- Para verificar en cada carga
         process_auth_params,    # <-- Para procesar params de URL si no hay sesión verificada
         display_auth_status,
         load_user_accounts,     # <-- Para cargar cuentas después de verificar/conectar
@@ -370,7 +370,6 @@ elif selected_tab == "Content Generation":
              final_link_url = st.text_input("Final Link URL:", value=st.session_state.get('draft_link_url', ''), key="final_link_url_area") # Editar link también
 
              publish_now = st.button("✅ Publish Now", key="publish_now_btn")
-             # ... (schedule logic sin cambios) ...
              schedule_mode = st.toggle("📅 Schedule for later", key="schedule_toggle")
              scheduled_dt_input = None
              if schedule_mode:
@@ -442,6 +441,5 @@ elif selected_tab == "Scheduling":
     # necesitarían usar get_auth_headers() y fastapi_client con esos headers.
 
 
-# --- Footer (Sin cambios) ---
 st.sidebar.divider()
 st.sidebar.caption(f"AIPost v0.4 (Token Auth) | FastAPI: {FASTAPI_URL}")
