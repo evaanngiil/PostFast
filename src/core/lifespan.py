@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.core.logger import logger
 from src.agents.sample_agent.agent import create_workflow
+from src.data_processing import setup_database
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -12,6 +13,10 @@ async def lifespan(app: FastAPI):
     try:
         # Inicio de la aplicación
         logger.info("🚀 Iniciando aplicación...")
+        
+        logger.info("Inicializando Database")
+        setup_database()
+        logger.info("Database inicializada correctamente")
         
         # Verificar que el grafo está disponible
         app.state.graph = create_workflow()
