@@ -218,8 +218,10 @@ def transform_and_load_linkedin(data, org_urn, conn):
             except (KeyError, ValueError, TypeError) as e:
                 print(f"Skipping invalid LI page view record: {element} - Error: {e}")
                 continue
-
-    if metrics_to_insert:
+    
+    # 3. Procesar Otras Métricas
+    rows_inserted = 0
+    if records:
          cur = None
          try:
              cur = conn.cursor()
@@ -234,18 +236,19 @@ def transform_and_load_linkedin(data, org_urn, conn):
                      extracted_at = CURRENT_TIMESTAMP;
              """
              # executemany funciona bien con listas de diccionarios en psycopg3
-             cur.executemany(sql_upsert, metrics_to_insert)
+             cur.executemany(sql_upsert, records)
              rows_inserted = cur.rowcount # Número de filas afectadas
              conn.commit() # Commit después de la transacción
-             logger.info(f"Upserted {rows_inserted} LinkedIn metrics for {account_urn}")
+             logger.info(f"Upserted {rows_inserted} LinkedIn metrics for {org_urn}")
          except psycopg.Error as e:
-             logger.exception(f"Error upserting LinkedIn metrics for {account_urn}")
-             if conn: conn.rollback() # Deshacer en caso de error
+             logger.exception(f"Error upserting LinkedIn metrics for {org_urn}")
+             if conn: 
+                conn.rollback() # Deshacer en caso de error
              rows_inserted = 0 # Indicar fallo
          finally:
               if cur: cur.close()
     else:
-         logger.info(f"No new LinkedIn metrics data parsed/formatted to insert for {account_urn}")
+         logger.info(f"No new LinkedIn metrics data parsed/formatted to insert for {org_urn}")
 
     return rows_inserted
 
