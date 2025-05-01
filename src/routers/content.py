@@ -18,12 +18,7 @@ except ImportError:
      async def get_current_session_data_from_token():
           raise NotImplementedError("Auth dependency not loaded")
 
-content_router = APIRouter(
-    prefix="/content",
-    tags=["Content Generation & Scheduling"],
-    # Aplicar dependencia globalmente si todos los endpoints la necesitan
-    dependencies=[Depends(get_current_session_data_from_token)]
-)
+content_router = APIRouter()
 
 # --- Modelos Pydantic para Payloads ---
 class SchedulePostPayload(BaseModel):
@@ -31,7 +26,6 @@ class SchedulePostPayload(BaseModel):
     account_id: str # ID de la página/org 
     content: str
     scheduled_time_str: Optional[str] = None # ISO 8601 format
-    page_access_token: Optional[str] = None # Solo para FB, enviado explícitamente si es necesario
     image_url: Optional[str] = None # Para IG (o posts con imagen en otras plat.)
     link_url: Optional[str] = None # Para posts con enlaces
 
@@ -65,16 +59,8 @@ async def schedule_post_endpoint(
          # raise HTTPException(status_code=400, detail="Platform mismatch between payload and session.")
 
     # Determinar el token a usar para la API social
-    # Para FB, usar page_access_token si se proporciona en el payload, sino el token de usuario.
     # Para LI, usar siempre el token de usuario.
     token_for_api = user_access_token
-    if payload.platform.lower() == "facebook" and payload.page_access_token:
-         logger.debug("Using provided Facebook page access token for the API call.")
-         token_for_api = payload.page_access_token
-    elif payload.platform.lower() == "facebook":
-         logger.debug("Using Facebook user access token for the API call (no page token provided).")
-         # Considerar si esto es un error - ¿la API de página requiere token de página? Probablemente sí.
-         # raise HTTPException(status_code=400, detail="Facebook page access token required for posting.")
 
     # Preparar argumentos para la tarea Celery
     task_args = [
@@ -93,8 +79,11 @@ async def schedule_post_endpoint(
 
     try:
         if payload.scheduled_time_str:
-            try: scheduled_dt = datetime.fromisoformat(payload.scheduled_time_str.replace('Z', '+00:00'))
-            except ValueError: scheduled_dt_naive = datetime.fromisoformat(payload.scheduled_time_str); scheduled_dt = scheduled_dt_naive.replace(tzinfo=timezone.utc)
+            try: 
+                scheduled_dt = datetime.fromisoformat(payload.scheduled_time_str.replace('Z', '+00:00'))
+            except ValueError: 
+                scheduled_dt_naive = datetime.fromisoformat(payload.scheduled_time_str) 
+                scheduled_dt = scheduled_dt_naive.replace(tzinfo=timezone.utc)
 
             if scheduled_dt <= datetime.now(timezone.utc):
                  logger.warning(f"Scheduled time {payload.scheduled_time_str} is in the past. Publishing now.")
