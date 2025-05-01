@@ -60,15 +60,12 @@ try:
         processed_new_login = process_auth_params()
 
     # 3. Determinar si estamos conectados ahora
-    is_connected_now = st.session_state.get("fb_connected") or st.session_state.get("li_connected")
+    is_connected_now = st.session_state.get("li_connected")
     logger.info(f"Initialization complete. Session valid: {session_was_valid}, New login processed: {processed_new_login}, Currently connected: {is_connected_now}")
 
     # 4. Cargar cuentas SI estamos conectados y aún no están cargadas
     accounts_loaded_this_run = False
     if is_connected_now:
-        if st.session_state.get("fb_connected") and not st.session_state.user_accounts.get("Facebook"):
-            logger.debug("Attempting to load Facebook accounts post-verification/login...")
-            if load_user_accounts("Facebook"): accounts_loaded_this_run = True
         if st.session_state.get("li_connected") and not st.session_state.user_accounts.get("LinkedIn"):
             logger.debug("Attempting to load LinkedIn accounts post-verification/login...")
             if load_user_accounts("LinkedIn"): accounts_loaded_this_run = True
@@ -78,7 +75,7 @@ try:
     if processed_new_login or accounts_loaded_this_run:
          logger.debug(f"Rerunning after new login ({processed_new_login}) or account load ({accounts_loaded_this_run}).")
          # Usar rerun con precaución, podría causar bucles si no se maneja bien el estado
-         # st.rerun() # Comentar si causa problemas
+         st.rerun() # Comentar si causa problemas
 
 except Exception as init_err:
     st.error(f"Error during application initialization: {init_err}")
@@ -108,10 +105,7 @@ if selected_account_data and isinstance(selected_account_data, dict):
     active_platform = selected_account_data.get('platform')
     active_account_id = selected_account_data.get('id')
     selected_account_name = selected_account_data.get('name', active_account_id)
-    if active_platform == "Facebook":
-        user_access_token = st.session_state.get("fb_token_data", {}).get("access_token")
-        account_specific_token = selected_account_data.get('access_token') # FB Page token
-    elif active_platform == "LinkedIn":
+    if active_platform == "LinkedIn":
         user_access_token = st.session_state.get("li_token_data", {}).get("access_token")
     if user_access_token: 
         logger.debug(f"Active Context Set - Platform: {active_platform}, Account: {selected_account_name} ({active_account_id}), User Token: Yes")
@@ -122,9 +116,7 @@ if selected_account_data and isinstance(selected_account_data, dict):
 def get_auth_headers():
     """Obtiene el token de acceso del usuario y devuelve la cabecera de autorización."""
     access_token = None
-    if active_platform == "Facebook":
-        access_token = st.session_state.get("fb_token_data", {}).get("access_token")
-    elif active_platform == "LinkedIn":
+    if active_platform == "LinkedIn":
         access_token = st.session_state.get("li_token_data", {}).get("access_token")
 
     if access_token:
@@ -162,13 +154,12 @@ if selected_tab == "Analytics":
                 else:
                     etl_endpoint = f"{FASTAPI_URL}/analytics/trigger_etl" # Ruta del router
                     # Payload ya NO necesita incluir el token_data, se envía en header
+                    logger.debug(f"ENDPOINT TRIGGER ETL {etl_endpoint}")
                     payload = {
                         "platform": active_platform,
                         "account_id": active_account_id,
-                        "start_date": start_date.strftime('%Y-%m-%d'),
-                        "end_date": end_date.strftime('%Y-%m-%d'),
-                        # Enviar token de página FB si existe y es necesario para el endpoint
-                        "page_access_token": account_specific_token if active_platform == "Facebook" else None
+                        "start_date": start_date.isoformat(),
+                        "end_date": end_date.isoformat(),
                     }
                     try:
                         response = fastapi_client.post(
@@ -227,7 +218,9 @@ if selected_tab == "Analytics":
                                         status_ctx.update(label="Extraction Completed!", state="complete", expanded=False)
                                         st.success(f"Extraction successful. Rows processed: {result.get('rows_processed', 0)}")
                                         del st.session_state['etl_task_id']
-                                        time.sleep(1); st.rerun(); break
+                                        time.sleep(1) 
+                                        st.rerun()
+                                        break
                                     elif task_status == "FAILURE":
                                         error_msg = result.get('error', 'Unknown error'); traceback_info = result.get('traceback', '')
                                         status_ctx.update(label="Extraction Failed!", state="error", expanded=True)
@@ -256,18 +249,18 @@ if selected_tab == "Analytics":
                              del st.session_state['etl_task_id']; break
                     else: # Max polls reached
                          logger.warning(f"Polling timed out for task {task_id} after {max_polls} attempts.")
-                         with status_placeholder.container(): st.warning(f"Could not get final status for task {task_id} after timeout.")
-                         if 'etl_task_id' in st.session_state: del st.session_state['etl_task_id']
+                         with status_placeholder.container(): 
+                            st.warning(f"Could not get final status for task {task_id} after timeout.")
+                         if 'etl_task_id' in st.session_state: 
+                            del st.session_state['etl_task_id']
 
         # --- Fin de la lógica de polling ---
 
         # --- Mostrar KPIs y Gráficas ---
         kpi_metrics_map = {
-            "Facebook": ("page_fans", "page_impressions", "page_post_engagements"),
             "LinkedIn": ("follower_total", "page_views"), # Asumiendo que tienes page_views
         }
         timeseries_metrics_map = {
-            "Facebook": ["page_impressions", "page_post_engagements", "engagement_rate", "page_fans", "follower_growth"],
             "LinkedIn": ["page_views", "follower_total", "follower_growth"], # Asumiendo que tienes page_views
         }
 
@@ -288,7 +281,7 @@ if selected_tab == "Analytics":
         if latest_kpis:
             num_kpis = len(latest_kpis); cols = st.columns(num_kpis or 1)
             i = 0
-            friendly_names = {"page_fans": "Fans (FB)", "follower_total": "Seguidores (LI)", "page_impressions": "Impr. (FB)", "page_post_engagements": "Interac. (FB)", "page_views": "Vistas Pág. (LI)"}
+            friendly_names = { "follower_total": "Seguidores (LI)", "page_views": "Vistas Pág. (LI)"}
             for metric, value in latest_kpis.items():
                  if i < len(cols):
                      with cols[i]: st.metric(label=friendly_names.get(metric, metric), value=f"{value:,}" if isinstance(value, (int, float)) else value)
@@ -338,7 +331,7 @@ if selected_tab == "Analytics":
 
 
 elif selected_tab == "Content Generation":
-    st.header("✍️ Content Generator and Publisher (FB & LI)")
+    st.header("✍️ Content Generator and Publisher")
 
     if not selected_account_data:
          st.warning("Select an account/page in the sidebar to publish.")
@@ -354,7 +347,7 @@ elif selected_tab == "Content Generation":
              tone = st.selectbox("Message Tone", ["Professional", "Informal", "Inspirational", "Funny", "Informative"])
              description = st.text_area("Describe briefly what you want to publish", height=100)
              link_url_input = st.text_input("Link URL (Optional)", key="content_link_url")
-             submitted_generate = st.form_submit_button("✨ Generate Draft (AI)")
+             submitted_generate = st.form_submit_button("✨ Generate Draft Content")
              if submitted_generate:
                   # Placeholder LangChain call
                   with st.spinner("Generating content..."): time.sleep(1)
@@ -374,7 +367,7 @@ elif selected_tab == "Content Generation":
              scheduled_dt_input = None
              if schedule_mode:
                   now_plus_1h = datetime.now(timezone.utc) + timedelta(hours=1)
-                  scheduled_dt_input = st.datetime_input("Publication Date (UTC)", value=now_plus_1h, key="schedule_datetime")
+                  scheduled_dt_input = st.date_input("Publication Date (UTC)", value=now_plus_1h, key="schedule_datetime")
              publish_schedule = st.button("🚀 Confirm Schedule", key="schedule_confirm_btn", disabled=not schedule_mode)
 
 
@@ -386,7 +379,7 @@ elif selected_tab == "Content Generation":
                     schedule_time_iso = None
                     action = "publish_now"
                     if publish_schedule and scheduled_dt_input:
-                        schedule_time_iso = scheduled_dt_input.astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+                        schedule_time_iso = datetime.combine(scheduled_dt_input, datetime.min.time()).astimezone(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
                         action = "schedule"
                     elif publish_schedule and not scheduled_dt_input:
                          st.warning("Please select a date and time to schedule.")
@@ -399,8 +392,6 @@ elif selected_tab == "Content Generation":
                         "account_id": active_account_id,
                         "content": final_content,
                         "scheduled_time_str": schedule_time_iso,
-                        # Enviar token de página FB si existe y el endpoint lo espera
-                        "page_access_token": account_specific_token if active_platform == "Facebook" else None,
                         "link_url": final_link_url if final_link_url else None
                         # Añadir otros campos si el endpoint los necesita (ej. title para LI)
                     }
