@@ -1,7 +1,7 @@
 # social_apis.py
 import requests
 from src.core.logger import logger
-from src.core.constants import FB_GRAPH_URL, LI_API_URL
+from src.core.constants import  LI_API_URL
 import time
 from urllib.parse import quote # Necesario para URNs
 
