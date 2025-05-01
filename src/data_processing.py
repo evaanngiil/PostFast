@@ -1,5 +1,5 @@
 import duckdb
-import psycopg # Nuevo driver
+import psycopg
 from psycopg.rows import dict_row # Para obtener resultados como diccionarios
 import pandas as pd
 import streamlit as st
@@ -9,24 +9,7 @@ import time
 
 from src.core.constants import DATABASE_URL
 from src.social_apis import get_instagram_insights, get_linkedin_page_insights # For simple backoff
-from src.core.logger import logger # Asumiendo que tienes un logger configurado
-
-# --- DuckDB Connection ---
-# DB_FILE = "analytics.duckdb"
-
-# def get_db_connection(read_only: bool = False):
-#     """
-#     Obtiene una conexión a la base de datos DuckDB.
-#     Permite especificar el modo read_only.
-#     """
-#     mode = "Read-Only" if read_only else "Read-Write"
-#     try:
-#         conn = duckdb.connect(database=DB_FILE, read_only=read_only)
-#         logger.debug(f"DuckDB connection opened for {DB_FILE} in {mode} mode.")
-#         return conn
-#     except Exception as e:
-#         logger.error(f"Failed to connect to DB '{DB_FILE}' in {mode} mode: {e}", exc_info=True)
-#         return None
+from src.core.logger import logger 
 
 def get_db_connection(read_only: bool = False): # Mantener read_only por si se usa en el futuro
     """
@@ -121,8 +104,6 @@ def fetch_with_retry(api_call_func, max_retries=3, delay=5):
                 raise # Raise exception if retries are exhausted
             print(f"Retrying in {delay} seconds...")
             time.sleep(delay)
-        # You could add specific handling for Rate Limits if the API indicates it
-
 
 # --- Load and Transform Functions (ELT) ---
 def transform_and_load_instagram(data, ig_user_id, conn):
