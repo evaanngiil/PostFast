@@ -21,13 +21,20 @@ def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTPError en {func_name} (attempt {attempt + 1}/{max_retries}): {e.response.status_code} - {e.response.text[:200]}...") # Loguear inicio del error
             if e.response.status_code >= 500 or e.response.status_code == 429:
-                if attempt + 1 == max_retries: logger.error(f"API call {func_name} failed after {max_retries} retries."); raise
+                if attempt + 1 == max_retries: 
+                    logger.error(f"API call {func_name} failed after {max_retries} retries.") 
+                    raise
                 logger.info(f"Retrying {func_name} in {delay} seconds..."); time.sleep(delay)
-            else: logger.error(f"API call {func_name} failed with client error: {e.response.status_code}. No retrying."); raise e
+            else: 
+                logger.error(f"API call {func_name} failed with client error: {e.response.status_code}. No retrying.") 
+                raise e
         except requests.exceptions.RequestException as e:
             logger.error(f"RequestException en {func_name} (attempt {attempt + 1}/{max_retries}): {e}")
-            if attempt + 1 == max_retries: logger.error(f"API call {func_name} failed after {max_retries} retries."); raise
-            logger.info(f"Retrying {func_name} in {delay} seconds..."); time.sleep(delay)
+            if attempt + 1 == max_retries: 
+                logger.error(f"API call {func_name} failed after {max_retries} retries.")
+                raise
+            logger.info(f"Retrying {func_name} in {delay} seconds...")
+            time.sleep(delay)
         except Exception as e:
              logger.exception(f"Unexpected error in {func_name} (attempt {attempt + 1}/{max_retries}): {e}")
              raise
@@ -166,52 +173,76 @@ def get_linkedin_organization_details(org_urn, access_token):
          return None
 
 
+
 def get_linkedin_page_insights(org_urn, access_token, start_ts_ms, end_ts_ms):
-    """Extract insights from a LinkedIn organization page."""
+    """
+    Extract insights from a LinkedIn organization page.
+    NOTE: This function should ONLY be called for organization URNs.
+    """
+    # Validar que es un URN de organización
+    if not org_urn or not org_urn.startswith("urn:li:organization:"):
+        logger.error(f"Invalid call to get_linkedin_page_insights with non-organization URN: {org_urn}")
+        # Devolver None o lanzar un error específico
+        return {'followers': None, 'views': None} # Devolver datos vacíos
+
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "LinkedIn-Version": "202311",
-        "X-Restli-Protocol-Version": "2.0.0" # Necesario para estos endpoints de estadísticas
+        "LinkedIn-Version": "202311", # Usar versión consistente
+        "X-Restli-Protocol-Version": "2.0.0"
     }
     results = {'followers': None, 'views': None}
-    logger.debug(f"Fetching LinkedIn insights for {org_urn} from {start_ts_ms} to {end_ts_ms}")
+    logger.debug(f"Fetching LinkedIn ORG insights for {org_urn} from {start_ts_ms} to {end_ts_ms}")
 
-    # Followers Statistics
+    # --- Followers Statistics ---
+    # Referencia: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/analytics/organization-social-analytics/follower-statistics
     params_followers = {
-        "q": "organizationalEntity",
+        "q": "organizationalEntity", # Query por entidad organizacional
         "organizationalEntity": org_urn,
+        # Especificar intervalo de tiempo y granularidad
         "timeIntervals.timeGranularityType": "DAY",
         "timeIntervals.timeRange.start": start_ts_ms,
         "timeIntervals.timeRange.end": end_ts_ms
     }
     follower_stats_url = f"{LI_API_URL}/organizationalEntityFollowerStatistics"
     def call_followers():
+        # Loguear URL y params exactos para debug
+        logger.debug(f"Calling follower stats: URL={follower_stats_url}, Params={params_followers}")
         return requests.get(follower_stats_url, headers=headers, params=params_followers)
     try:
-        results['followers'] = fetch_with_retry_log(call_followers, f"get_linkedin_followers (URN: {org_urn})")
-        logger.debug(f"Follower stats raw response keys: {results['followers'].keys() if isinstance(results['followers'], dict) else 'N/A'}")
+        # Usar fetch_with_retry_log como antes
+        follower_data = fetch_with_retry_log(call_followers, f"get_linkedin_followers (URN: {org_urn})")
+        # Guardar los datos crudos si la llamada fue exitosa (incluso si está vacío)
+        if follower_data is not None: results['followers'] = follower_data
+        logger.debug(f"Follower stats raw response keys: {results['followers'].keys() if isinstance(results['followers'], dict) else 'Call Failed or No Data'}")
     except Exception as e:
-        logger.error(f"Failed to get LinkedIn followers stats for {org_urn}.") # Error ya logueado en fetcher
+        # fetch_with_retry_log ya loguea, aquí solo indicamos fallo general
+        logger.error(f"Failed to get LinkedIn followers stats for {org_urn} after retries.")
+        results['followers'] = None # Asegurar que es None en caso de fallo
 
-    # Page Statistics (Views, Clicks, etc.)
+    # --- Page Statistics ---
+    # Referencia: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/analytics/organization-social-analytics/organization-page-statistics
     params_views = {
-        "q": "organization", # Diferente 'q' aquí
+        "q": "organization",
         "organization": org_urn,
         "timeIntervals.timeGranularityType": "DAY",
         "timeIntervals.timeRange.start": start_ts_ms,
         "timeIntervals.timeRange.end": end_ts_ms,
-        # Especificar campos deseados (ajustar según necesidad)
-        "fields": "totalPageStatistics(views),totalShareStatistics(engagement,impressionCount,likeCount,commentCount,shareCount,clickCount)"
+        # Los campos solicitados pueden requerir permisos específicos
+        "fields": "totalPageStatistics(views(allDesktopPageViews,allMobilePageViews)),totalShareStatistics(engagement,impressionCount,likeCount,commentCount,shareCount,clickCount)"
     }
     page_stats_url = f"{LI_API_URL}/organizationPageStatistics"
     def call_views():
+        logger.debug(f"Calling page stats: URL={page_stats_url}, Params={params_views}")
         return requests.get(page_stats_url, headers=headers, params=params_views)
     try:
-        results['views'] = fetch_with_retry_log(call_views, f"get_linkedin_page_views (URN: {org_urn})")
-        logger.debug(f"Page stats raw response keys: {results['views'].keys() if isinstance(results['views'], dict) else 'N/A'}")
+        views_data = fetch_with_retry_log(call_views, f"get_linkedin_page_views (URN: {org_urn})")
+        if views_data is not None: results['views'] = views_data
+        logger.debug(f"Page stats raw response keys: {results['views'].keys() if isinstance(results['views'], dict) else 'Call Failed or No Data'}")
     except Exception as e:
-        logger.error(f"Failed to get LinkedIn page stats for {org_urn}.")
+        logger.error(f"Failed to get LinkedIn page stats for {org_urn} after retries.")
+        results['views'] = None
 
+    # Devolver el diccionario, que contendrá None si las llamadas fallaron
     return results
 
 
@@ -289,7 +320,7 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
     def api_call():
         return requests.post(post_url, headers=headers, json=post_body)
 
-    # Llamada API y manejo de respuesta (sin cambios)
+    # Llamada API y manejo de respuesta
     try:
         # Usar la response directamente, no el resultado de .json() que podría fallar en 201
         response_obj = fetch_with_retry_log(api_call, f"post_to_linkedin ({'Org' if is_organization_post else 'Profile'}) (Target: {target_entity_urn})")
