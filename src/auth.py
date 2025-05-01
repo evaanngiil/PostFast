@@ -3,6 +3,8 @@ import streamlit as st
 import requests
 import json
 import base64
+import psycopg
+from psycopg.rows import dict_row
 from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 from requests_oauthlib import OAuth2Session
@@ -11,7 +13,7 @@ from streamlit.components.v1 import html
 from src.data_processing import get_db_connection
 
 try: 
-    from src.core.constants import FASTAPI_URL
+    from src.core.constants import FASTAPI_URL, DATABASE_URL
 except ImportError: 
     FASTAPI_URL = "http://localhost:8000"
 try: 
@@ -90,7 +92,7 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
         expires_at_db = result.get('expires_at')
         user_info_db = result.get('user_info') # Esto es lo que devuelve la DB (JSONB/dict)
 
-        # --- Chequeo de Expiración (lógica sin cambios) ---
+        # --- Chequeo de Expiración ---
         token_expired = False
         if expires_at_db:
             expires_at_aware = None
