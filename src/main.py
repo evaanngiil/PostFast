@@ -61,7 +61,7 @@ if not SECRET_KEY:
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY, https_only=False, same_site='lax')
 
 # Middleware for CORS (Cross-Origin Resource Sharing)
-# Permite que tu frontend Streamlit (en localhost:8501) hable con tu backend (localhost:8000)
+# Permite que Streamlit (en localhost:8501) hable con backend (localhost:8000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8501"], # Streamlit dev URL
@@ -70,8 +70,6 @@ app.add_middleware(
     allow_headers=["*"], # Permite todas las cabeceras
 )
 
-# Database connection setup
-DB_FILE = "analytics.duckdb"
 def get_db_connection():
     """Obtiene una conexión a la base de datos PostgreSQL."""
     try:
@@ -154,7 +152,7 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
         expires_at_db = result.get('expires_at')
         user_info_db = result.get('user_info')
 
-        # --- Chequeo de Expiración (lógica sin cambios) ---
+        # --- Chequeo de Expiración  ---
         token_expired = False
         if expires_at_db:
             expires_at_aware = None
@@ -214,7 +212,6 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
 # --- OAuth Endpoints ---
 
 @app.get("/auth/login/{provider}")
-# ... (sin cambios respecto a tu versión anterior) ...
 async def oauth_login(provider: str, request: Request):
     logger.info(f"Initiating OAuth login for provider: {provider}")
     client_id = None; redirect_uri = None; scope = None; auth_url = None
@@ -227,7 +224,11 @@ async def oauth_login(provider: str, request: Request):
             'openid', 'profile', 'email', # Requeridos para /userinfo
             'r_liteprofile', # Perfil básico
             'w_member_social', # Permiso para postear como miembro
-            'r_organization_admin' # Permiso para leer datos de organizaciones admin
+            # 'r_member_social', # Permiso para leer posts de miembro
+            'r_organization_admin'# Permiso para leer datos de organizaciones admin,
+            # 'r_organization_social'
+            # 'w_organization_social',
+            # 'r_basicprofile' # Permiso para leer perfil básico
         ]
         auth_url = "https://www.linkedin.com/oauth/v2/authorization"
         logger.info(f"Requesting LinkedIn scopes: {scope}")
@@ -258,10 +259,14 @@ async def oauth_callback(provider: str, request: Request, response: Response, co
     stored_csrf_state = request.session.get('oauth_state')
     redirect_base_url = BASE_URL
 
-    # --- Validaciones (sin cambios) ---
-    if error: return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:{error}", status_code=307)
-    if not code or not state: return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:missing_code_or_state", status_code=307)
-    if state != stored_csrf_state: request.session.pop('oauth_state', None); return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:state_mismatch", status_code=307)
+    # --- Validaciones ---
+    if error: 
+        return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:{error}", status_code=307)
+    if not code or not state: 
+        return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:missing_code_or_state", status_code=307)
+    if state != stored_csrf_state: 
+        request.session.pop('oauth_state', None) 
+        return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:state_mismatch", status_code=307)
     request.session.pop('oauth_state', None); logger.debug("CSRF state validated.")
 
     conn = None
@@ -269,7 +274,7 @@ async def oauth_callback(provider: str, request: Request, response: Response, co
     try:
         user_info = None; token = None; user_provider_id = None
 
-        # --- Lógica LinkedIn (sin cambios internos) ---
+        # --- Lógica LinkedIn ---
         if provider == "linkedin":
             token_endpoint = "https://www.linkedin.com/oauth/v2/accessToken"
             oauth = OAuth2Session(LI_CLIENT_ID, redirect_uri=LI_REDIRECT_URI, state=state)
@@ -301,11 +306,12 @@ async def oauth_callback(provider: str, request: Request, response: Response, co
         session_cookie_id = uuid.uuid4() # Generar UUID
         expires_at = None
         if 'expires_in' in token:
-            try: expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(token['expires_in']))
+            try: 
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(token['expires_in']))
             except ValueError: expires_at = None
         user_info_json_str = json.dumps(user_info) # Convertir dict a JSON string
 
-        # --- SQL UPSERT CORREGIDO ---
+        # --- SQL UPSERT  ---
         sql_upsert = """
             INSERT INTO user_sessions (
                 session_cookie_id, provider, user_provider_id, access_token, refresh_token,
@@ -334,7 +340,7 @@ async def oauth_callback(provider: str, request: Request, response: Response, co
             if conn: conn.rollback()
             raise ConnectionError("Database error during session save.") from db_err
 
-        # --- Redirigir a Streamlit (sin cambios) ---
+        # --- Redirigir a Streamlit---
         user_info_b64 = base64.urlsafe_b64encode(user_info_json_str.encode()).decode()
         access_token_encoded = quote_plus(token['access_token'])
         final_redirect_url = f"{redirect_base_url}?auth_provider={provider}&auth_token={access_token_encoded}&user_info={user_info_b64}"
@@ -346,20 +352,22 @@ async def oauth_callback(provider: str, request: Request, response: Response, co
         )
         return redirect_response
 
-    # --- Manejo de Excepciones (sin cambios) ---
+    # --- Manejo de Excepciones --
     except Exception as e:
         logger.exception(f"Critical error during OAuth callback for {provider}: {e}")
         error_code = "callback_failed";
-        if isinstance(e, ConnectionError): error_code = "db_error"
-        elif "token" in str(e).lower(): error_code = "token_fetch_failed"
-        elif "user_info" in str(e).lower(): error_code = "user_info_failed"
+        if isinstance(e, ConnectionError): 
+            error_code = "db_error"
+        elif "token" in str(e).lower(): 
+            error_code = "token_fetch_failed"
+        elif "user_info" in str(e).lower(): 
+            error_code = "user_info_failed"
         return RedirectResponse(f"{redirect_base_url}?auth_error={provider}:{error_code}", status_code=307)
     finally:
         # Cerrar cursor y conexión síncronos
         if cur: cur.close()
         if conn: conn.close()
         logger.debug("DB sync connection closed in callback finally block.")
-
 
 
 @app.get("/auth/me")
@@ -512,7 +520,7 @@ async def logout_user(request: Request):
             if conn:
                 conn.close()
 
-    # Redirigir y borrar cookie (sin cambios)
+    # Redirigir y borrar cookie
     response = RedirectResponse(url=BASE_URL, status_code=307)
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/", domain="localhost")
     return response
@@ -520,7 +528,6 @@ async def logout_user(request: Request):
 # --- Endpoints básicos y Routers ---
 
 @app.get("/privacy-policy", response_class=HTMLResponse)
-# ... (sin cambios) ...
 async def privacy_policy():
     html_content = """<html><head><title>Privacy Policy</title></head><body><h1>Privacy Policy</h1><p>This is a placeholder privacy policy...</p></body></html>"""
     return HTMLResponse(content=html_content)
