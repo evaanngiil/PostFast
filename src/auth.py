@@ -3,8 +3,12 @@ import streamlit as st
 import requests
 import json
 import base64
+from datetime import datetime, timezone
 from urllib.parse import unquote_plus
+from requests_oauthlib import OAuth2Session
+from typing import Optional # Para Optional Header
 from streamlit.components.v1 import html
+from src.data_processing import get_db_connection
 
 try: 
     from src.core.constants import FASTAPI_URL
@@ -27,6 +31,138 @@ except ImportError:
     # get_linkedin_user_info es crucial, asegurémonos de que exista un dummy válido si falla la importación
     def get_linkedin_user_info(token): return {'sub': 'dummy_user_sub', 'name': 'Dummy User', 'email': 'dummy@example.com', 'picture': None, 'id': 'dummy_user_sub'}
 
+
+# Esquema de seguridad para obtener token Bearer de la cabecera Authorization
+# tokenUrl es nominal, no lo usamos para obtener el token, solo para decirle a FastAPI cómo extraerlo
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False) # auto_error=False para manejar 401 manualmente
+
+def get_db_connection():
+    """Obtiene una conexión síncrona a PostgreSQL."""
+    if not DATABASE_URL:
+        logger.error("DATABASE_URL is not configured.")
+        return None
+    try:
+        # Usar conexión síncrona
+        conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
+        logger.debug("PostgreSQL sync connection opened (from auth.py).")
+        return conn
+    except psycopg.Error as e:
+        logger.error(f"Failed to connect sync to PostgreSQL DB (from auth.py): {e}", exc_info=True)
+        return None
+    except Exception as e:
+        logger.error(f"Unexpected error connecting sync to PostgreSQL (from auth.py): {e}", exc_info=True)
+        return None
+
+
+def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
+    """
+    Dependency (sync): Valida Bearer token, comprueba expiración, devuelve datos.
+    Usa psycopg síncrono y maneja resultados dict_row.
+    """
+    if token is None:
+        logger.warning("[Dependency] Auth required: No token provided.")
+        raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
+
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection() # Obtener conexión síncrona
+        if not conn:
+            logger.error("[Dependency] DB connection failed.")
+            raise HTTPException(status_code=503, detail="Database service unavailable")
+
+        cur = conn.cursor() # Crear cursor síncrono
+
+        # Usar placeholders %s
+        cur.execute("""
+            SELECT provider, user_provider_id, access_token, refresh_token,
+                   token_type, expires_at, user_info, session_cookie_id
+            FROM user_sessions WHERE access_token = %s
+        """, (token,))
+        result = cur.fetchone() # fetchone() devuelve dict o None
+
+        if not result:
+            logger.warning(f"[Dependency] Token validation failed: Token '{token[:5]}...' not found in DB.")
+            raise HTTPException(status_code=401, detail="Invalid credentials", headers={"WWW-Authenticate": "Bearer"})
+
+        # 'result' es un diccionario
+        session_cookie_id = result.get('session_cookie_id') # Usar .get() para seguridad
+        expires_at_db = result.get('expires_at')
+        user_info_db = result.get('user_info') # Esto es lo que devuelve la DB (JSONB/dict)
+
+        # --- Chequeo de Expiración (lógica sin cambios) ---
+        token_expired = False
+        if expires_at_db:
+            expires_at_aware = None
+            if isinstance(expires_at_db, datetime):
+                if expires_at_db.tzinfo is None: expires_at_aware = expires_at_db.replace(tzinfo=timezone.utc)
+                else: expires_at_aware = expires_at_db
+            else: logger.warning(f"[Dependency] expires_at is not datetime: {expires_at_db}")
+            if expires_at_aware and datetime.now(timezone.utc) > expires_at_aware: token_expired = True
+        # ---
+
+        if token_expired:
+            logger.warning(f"[Dependency] Access token expired for session {session_cookie_id}.")
+            raise HTTPException(status_code=401, detail="Token expired", headers={"WWW-Authenticate": "Bearer"})
+
+        # --- Opcional: Eliminar UPDATE last_accessed_at ---
+        # try:
+        #     cur.execute("UPDATE user_sessions SET last_accessed_at = current_timestamp WHERE session_cookie_id = %s", (session_cookie_id,))
+        #     conn.commit()
+        # except psycopg.Error as update_err:
+        #     logger.error(f"[Dependency] Failed to update last_accessed_at: {update_err}")
+        #     if conn: conn.rollback()
+        # -------------------------------------------------
+
+        # Preparar datos de salida
+        # user_info_db ya debería ser un dict si es JSONB y row_factory=dict_row funciona
+        user_info_out = user_info_db if isinstance(user_info_db, dict) else {}
+        # Intentar decodificar solo si NO es un dict (por si acaso)
+        if not isinstance(user_info_db, dict) and user_info_db is not None:
+             try:
+                 user_info_out = json.loads(user_info_db)
+             except (json.JSONDecodeError, TypeError) as json_err:
+                 logger.warning(f"[Dependency] Could not decode user_info from DB: {json_err}. DB value: {user_info_db}")
+                 user_info_out = {}
+
+
+        session_data = {
+            "authenticated": True,
+            "provider": result.get('provider'), # Usar .get()
+            "user_info": user_info_out,
+            "user_provider_id": result.get('user_provider_id'),
+            "session_cookie_id": session_cookie_id,
+            "token_data": {
+                "access_token": result.get('access_token'),
+                "refresh_token": result.get('refresh_token'),
+                "token_type": result.get('token_type'),
+                "expires_at": expires_at_db.isoformat() if isinstance(expires_at_db, datetime) else None
+            }
+        }
+        logger.debug(f"[Dependency] Token validated successfully for {session_data['provider']} user {session_data['user_provider_id']}")
+        return session_data
+
+    except HTTPException as http_exc:
+        if conn: 
+            conn.rollback() # Deshacer transacción en errores HTTP
+        raise http_exc
+    except psycopg.Error as db_err:
+        logger.exception(f"[Dependency] PostgreSQL error verifying token: {db_err}")
+        if conn: 
+            conn.rollback()
+        raise HTTPException(status_code=503, detail="Database error during authentication")
+    except Exception as e:
+        logger.exception(f"[Dependency] Unexpected error verifying token: {e}")
+        if conn: 
+            conn.rollback()
+        raise HTTPException(status_code=500, detail="Internal server error")
+    finally:
+         # Cerrar cursor y conexión síncronos
+         if cur: 
+            cur.close()
+         if conn: 
+            conn.close()
+         logger.debug("[Dependency] PostgreSQL sync connection closed.")
 
 # --- Funciones de inicialización y verificación --
 def initialize_session_state():
@@ -71,49 +207,42 @@ def verify_session_on_load() -> bool:
             response.raise_for_status()
             auth_data = response.json()
             logger.debug(f"[/auth/me] response received: {auth_data}") # Log detallado de respuesta
+            logger.info(f"[/auth/me] response received: {response.text}") # Log de datos de autenticación
 
-            if auth_data.get("authenticated") and auth_data.get("provider") == "linkedin":
-                logger.info(f"Session successfully verified via token for provider: {auth_data.get('provider')}")
-                # Actualizar st.session_state con la data fresca del backend
-                st.session_state.li_token_data = auth_data.get("token_data")
-                st.session_state.li_user_info = auth_data.get("user_info", {})
-                st.session_state.li_connected = True 
-                st.session_state.auth_error = None
-                verified = True
-                logger.info("Session state updated: li_connected=True")
+            if isinstance(auth_data, dict) and auth_data.get("authenticated") and auth_data.get("provider") == "linkedin":
+                 logger.info(f"Session successfully verified via /auth/me for provider: {auth_data.get('provider')}")
+                 st.session_state.li_token_data = auth_data.get("token_data")
+                 # Asegurarse que user_info es un dict
+                 user_info = auth_data.get("user_info")
+                 st.session_state.li_user_info = user_info if isinstance(user_info, dict) else {}
+                 st.session_state.li_connected = True
+                 st.session_state.auth_error = None
+                 verified = True
+                 logger.info("Local session state updated: li_connected=True")
             else:
-                # Si /auth/me devuelve no autenticado O es de otro provider (no debería pasar)
-                logger.warning(f"Token validation via /auth/me failed or wrong provider. Reason: {auth_data.get('reason', 'Unknown')}, Provider: {auth_data.get('provider')}. Clearing local LI session.")
-                st.session_state.li_connected = False
-                st.session_state.li_token_data = None
-                st.session_state.li_user_info = None
-                verified = False
-
+                 # El log que veías antes se origina aquí porque auth_data venía corrupto
+                 logger.warning(f"Token validation via /auth/me failed or wrong provider. Auth Data: {auth_data}. Clearing local LI session.")
+                 st.session_state.li_connected = False; st.session_state.li_token_data = None; st.session_state.li_user_info = None
+                 verified = False
         except requests.exceptions.HTTPError as e:
-            logger.error(f"HTTP error validating token: {e}")
-            st.session_state.li_connected = False
-            st.session_state.li_token_data = None
-            st.session_state.li_user_info = None
-            if e.response.status_code == 401: st.session_state.auth_error = "Sesión inválida/expirada."
-            else: st.session_state.auth_error = f"Error servidor ({e.response.status_code})"
-            verified = False
+             logger.error(f"HTTP error validating token via /auth/me: {e}")
+             st.session_state.li_connected = False; st.session_state.li_token_data = None; st.session_state.li_user_info = None
+             if e.response and e.response.status_code == 401: st.session_state.auth_error = "Sesión inválida/expirada."
+             elif e.response and e.response.status_code == 503: st.session_state.auth_error = "Servicio no disponible (DB?)."
+             else: st.session_state.auth_error = f"Error servidor ({e.response.status_code if e.response else 'N/A'})"
+             verified = False
         except requests.exceptions.RequestException as e:
-            logger.error(f"Connection error validating token: {e}")
-            st.session_state.auth_error = "Error conexión servidor auth."
-            # No limpiar estado aquí, podría ser temporal
-            verified = False # No podemos verificar
+             logger.error(f"Connection error validating token via /auth/me: {e}")
+             st.session_state.auth_error = "Error conexión servidor auth."; verified = False
         except Exception as e:
-            logger.exception("Unexpected error during token validation.")
-            st.session_state.li_connected = False # Limpiar por si acaso
-            st.session_state.li_token_data = None
-            st.session_state.li_user_info = None
-            st.session_state.auth_error = f"Error inesperado sesión: {e}"
-            verified = False
-    else:
-        logger.debug("No existing LinkedIn token found in session state to verify.")
+             logger.exception("Unexpected error during /auth/me call.")
+             st.session_state.li_connected = False; st.session_state.li_token_data = None; st.session_state.li_user_info = None
+             st.session_state.auth_error = f"Error inesperado sesión: {e}"; verified = False
+    else: 
+        logger.debug("No existing LinkedIn token found in session state to verify.") 
         verified = False
 
-    st.session_state.session_verified = True # Marcar como verificado (o intento fallido)
+    st.session_state.session_verified = True
     logger.debug(f"verify_session_on_load finished. Verified status: {verified}, li_connected: {st.session_state.get('li_connected')}")
     return verified
 
@@ -125,7 +254,7 @@ def process_auth_params():
     Devuelve True si procesó parámetros exitosamente, False en caso contrario.
     """
     # Solo procesar si no tenemos ya una sesión verificada Y no hemos procesado params antes
-    if st.session_state.get("session_verified", False) and (st.session_state.get("fb_connected") or st.session_state.get("li_connected")):
+    if st.session_state.get("session_verified", False) and (st.session_state.get("li_connected")):
          logger.debug("Skipping URL param processing: Session already verified.")
          return False
     if st.session_state.get("processed_auth_params", False):
@@ -156,12 +285,7 @@ def process_auth_params():
             user_info = json.loads(user_info_json)
             token_data = {"access_token": access_token} # Estructura básica
 
-            if auth_provider == "facebook":
-                st.session_state.fb_token_data = token_data
-                st.session_state.fb_user_info = user_info
-                st.session_state.fb_connected = True
-                logger.info("Facebook session established from URL params.")
-            elif auth_provider == "linkedin":
+            if auth_provider == "linkedin":
                 st.session_state.li_token_data = token_data
                 st.session_state.li_user_info = user_info
                 st.session_state.li_connected = True
@@ -280,6 +404,7 @@ def display_auth_status(sidebar: bool = True):
         user_info = st.session_state.get("li_user_info")
         profile_pic_url = None
         display_name = "LinkedIn User"
+        logger.debug(f"Session State from display_auth_status: {st.session_state}")
 
         if user_info:
             display_name = user_info.get('name', display_name)
@@ -414,71 +539,3 @@ def display_account_selector(sidebar: bool = True):
 
         return st.session_state.get("selected_account")
 
-# OAuth2 scheme for Bearer token authentication in API endpoints
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") # "token" es un placeholder, no lo usaremos directamente
-
-async def get_current_session_data_from_token(token: str = Depends(oauth2_scheme)):
-    """
-    Dependency to verify Bearer token and fetch session data.
-    Esto se usará en los endpoints de API (analytics, content).
-    """
-    conn = None
-    try:
-        conn = get_db_connection()
-        if not conn:
-            raise HTTPException(status_code=503, detail="Database unavailable")
-
-        # Buscar la sesión usando el ACCESS TOKEN
-        # Si los tokens cambian (refresh), esto podría fallar.
-        # Una mejor aproximación sería validar el token con el proveedor O usar el session_cookie_id si estuviera disponible.
-        # Por simplicidad ahora, buscamos por access_token. NOTE: Considerar alternativas.
-        result = conn.execute("""
-            SELECT session_cookie_id, provider, user_provider_id, access_token, refresh_token,
-                   token_type, expires_at, user_info
-            FROM user_sessions
-            WHERE access_token = ?
-        """, [token]).fetchone() # ¡CUIDADO! Buscar por token puede no ser ideal si refrescan.
-
-        if not result:
-            logger.warning(f"Bearer token provided but no matching session found.")
-            raise HTTPException(status_code=401, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
-
-        (session_cookie_id, provider, user_pid, access_token_db, refresh_token,
-         t_type, expires_at, user_info_json) = result
-
-        # Validar si el token ha expirado (si expires_at está presente)
-        if expires_at and isinstance(expires_at, datetime) and datetime.now(timezone.utc) > expires_at:
-             logger.warning(f"Token expired for session {session_cookie_id}")
-             # Aquí podríamos intentar refrescar el token si tuviéramos el refresh_token
-             raise HTTPException(status_code=401, detail="Token expired", headers={"WWW-Authenticate": "Bearer"})
-
-        # Actualizar last_accessed_at
-        conn.execute("UPDATE user_sessions SET last_accessed_at = current_timestamp WHERE session_cookie_id = ?", [session_cookie_id])
-
-        user_info = json.loads(user_info_json) if user_info_json else {}
-
-        # Devolver datos relevantes para el endpoint
-        return {
-            "session_cookie_id": session_cookie_id,
-            "provider": provider,
-            "user_provider_id": user_pid,
-            "access_token": access_token_db,
-            "refresh_token": refresh_token,
-            "token_type": t_type,
-            "expires_at": expires_at,
-            "user_info": user_info,
-            "token_data": { # Para consistencia con lo que espera Streamlit
-                "access_token": access_token_db,
-                "refresh_token": refresh_token,
-                "token_type": t_type,
-                "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else expires_at
-            }
-        }
-
-    except HTTPException as http_exc:
-        raise http_exc # Re-lanzar excepciones HTTP
-    except Exception as e:
-        logger.exception(f"Error verifying bearer token: {e}")
-        raise HTTPException(status_code=500, detail="Error verifying token")
-    finally:
-        if conn: conn.close()
