@@ -3,6 +3,7 @@ import requests
 from src.core.logger import logger
 from src.core.constants import  LI_API_URL
 import time
+import json
 from urllib.parse import quote # Necesario para URNs
 
 # Helper fetch_with_retry_log
@@ -89,15 +90,14 @@ def get_linkedin_organizations(access_token):
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "LinkedIn-Version": "202311", # Mantener versión reciente
-        "X-Restli-Protocol-Version": "2.0.0" # Necesario para algunas APIs V2
+        "LinkedIn-Version": "202311",
+        "X-Restli-Protocol-Version": "2.0.0"
     }
-    # Parámetros para buscar membresías de administrador
     params = {
         "q": "roleAssignee",
         "role": "ADMINISTRATOR",
-        "state": "APPROVED", # Asegurar que el rol está activo
-        "count": 50 # Pedir un número razonable de organizaciones
+        "state": "APPROVED",
+        "count": 50
     }
     logger.debug("Fetching LinkedIn organizations with ADMIN role...")
 
@@ -110,66 +110,185 @@ def get_linkedin_organizations(access_token):
     if acl_data and isinstance(acl_data, dict) and 'elements' in acl_data:
         logger.info(f"Found {len(acl_data['elements'])} potential organization ACLs.")
         for element in acl_data['elements']:
-            org_urn = element.get('organizationalTarget')
-            # Extraer también el rol para asegurar que es el correcto (aunque filtramos por API)
+            org_urn = element.get('organization')
+            logger.debug(f"Processing potential Organization ACL for URN: {org_urn}")
             role_in_acl = element.get('role')
             state_in_acl = element.get('state')
 
             if org_urn and role_in_acl == "ADMINISTRATOR" and state_in_acl == "APPROVED":
-                logger.debug(f"Fetching details for Organization URN: {org_urn}")
-                # Obtener detalles (nombre) para esta organización
+                logger.debug(f"ADMIN/APPROVED role found for URN: {org_urn}. Fetching details...")
                 org_info = get_linkedin_organization_details(org_urn, access_token)
                 if org_info and isinstance(org_info, dict):
+                    org_id_from_details = org_info.get("id", org_urn.split(':')[-1]) # Usar ID numérico o extraer del URN
+                    org_name = org_info.get("localizedName", f"Org {org_id_from_details}") # Nombre o fallback
+                    logo_data = org_info.get("logoV2", {}) # Puede ser complejo, pasarlo tal cual
+
+                    # *** Asegurar estructura consistente para el frontend ***
                     organizations.append({
-                        "urn": org_urn, # Guardar el URN como ID principal
-                        "id": org_urn, # Duplicar en 'id' para posible compatibilidad
-                        "name": org_info.get("localizedName", org_urn.split(':')[-1]), # Nombre localizado o extraer ID numérico del URN
-                        # Se pueden añadir más detalles aquí si se necesitan: logo, etc.
-                        "logo": org_info.get("logoV2", {}), # Ejemplo: estructura del logo
-                        "platform": "LinkedIn" # Añadir plataforma
+                        "urn": org_urn,
+                        "id": org_id_from_details, # ID numérico o extraído
+                        "name": org_name,
+                        "logo": logo_data, # Pasar datos del logo si existen
+                        "platform": "LinkedIn",
+                        "type": "organization" # <<< AÑADIR TIPO
                     })
+                    logger.info(f"Successfully added organization: {org_name} (URN: {org_urn})")
                 else:
                      logger.warning(f"Could not get details for org URN: {org_urn}. Skipping.")
             else:
-                logger.debug(f"Skipping ACL element, criteria not met: {element}")
+                logger.debug(f"Skipping ACL element (not ADMIN/APPROVED or missing URN): {element}")
+    elif isinstance(acl_data, requests.Response): # Chequear si fetch_with_retry_log devolvió un error
+         logger.error(f"Failed to get LinkedIn organization ACLs. Status: {acl_data.status_code}, Body: {acl_data.text[:200]}")
     elif isinstance(acl_data, dict):
          logger.warning(f"LinkedIn organization ACL response structure unexpected or empty: {acl_data.keys()}")
     else:
-         logger.error(f"Failed to get valid data structure from LinkedIn organization ACLs endpoint. Received: {acl_data}")
+         logger.error(f"Failed to get valid data structure from LinkedIn organization ACLs endpoint. Received type: {type(acl_data)}")
 
 
-    logger.info(f"Processed LinkedIn organizations. Found {len(organizations)} admin roles.")
+    logger.info(f"Processed LinkedIn organizations. Found {len(organizations)} valid admin roles with details.")
     return organizations
 
 
-def get_linkedin_organization_details(org_urn, access_token):
-    """Get details (like name, logo) of an organization by its URN."""
+
+def get_linkedin_asset_url(asset_urn, access_token):
+    """
+    Retrieves the public download URL for a LinkedIn digital media asset URN.
+    Reference: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/community-management/shares/vector-images-api#retrieve-a-vector-image
+    (Aunque la doc es para Vector, el endpoint /digitalmediaAssets/{urn} suele funcionar para otros assets)
+    """
+    if not asset_urn or not asset_urn.startswith("urn:li:digitalmediaAsset:"):
+        logger.warning(f"Invalid asset URN provided to get_linkedin_asset_url: {asset_urn}")
+        return None
+
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "LinkedIn-Version": "202311" # Especificar versión
-        # "X-Restli-Protocol-Version": "2.0.0" - No suele ser necesario para este GET simple
+        "LinkedIn-Version": "202311" # Usar la misma versión
     }
-    # El URN debe estar URL-encoded para usar en la ruta
-    encoded_urn = quote(org_urn)
-    details_url = f"{LI_API_URL}/organizations/{encoded_urn}"
-    logger.debug(f"Calling LinkedIn Organization Details endpoint: {details_url}")
+    # El URN del asset también debe ir codificado en la URL
+    encoded_asset_urn = quote(asset_urn)
+    asset_url_endpoint = f"{LI_API_URL}/digitalmediaAssets/{encoded_asset_urn}"
 
-    params = {"fields": "id,localizedName,logoV2(original~:playableStreams)"}
+    logger.debug(f"Calling LinkedIn Digital Media Asset endpoint: {asset_url_endpoint}")
+
+    def api_call():
+        return requests.get(asset_url_endpoint, headers=headers)
+
+    try:
+        asset_data = fetch_with_retry_log(api_call, f"get_linkedin_asset_details (URN: {asset_urn})")
+
+        if isinstance(asset_data, dict):
+            # Buscar la URL de descarga. La estructura puede variar.
+            # Common paths: 'downloadUrl', 'privateDownloadUrl', 'elements'[0]['identifiers'][0]['identifier']
+            # Vamos a buscar en los lugares más probables
+            download_url = None
+            if 'downloadUrl' in asset_data:
+                 download_url = asset_data['downloadUrl']
+            elif 'privateDownloadUrl' in asset_data: # A veces es esta
+                 download_url = asset_data['privateDownloadUrl']
+            elif 'elements' in asset_data and isinstance(asset_data['elements'], list) and asset_data['elements']:
+                 # Intentar obtener la URL desde la estructura de 'elements' (común en imágenes vectoriales/logos)
+                 try:
+                     # Buscar el identificador con tipo 'DOWNLOAD_URL' o similar
+                     identifiers = asset_data['elements'][0].get('identifiers', [])
+                     url_identifier = next((ident for ident in identifiers if ident.get('identifierType') == 'DOWNLOAD_URL'), None)
+                     if url_identifier:
+                         download_url = url_identifier.get('identifier')
+                     else: # Fallback: tomar la primera URL que se encuentre
+                         url_identifier = next((ident for ident in identifiers if 'identifier' in ident), None)
+                         if url_identifier: download_url = url_identifier.get('identifier')
+
+                 except (IndexError, KeyError, TypeError) as e:
+                     logger.warning(f"Could not extract download URL from 'elements' structure for {asset_urn}: {e}")
+
+            if download_url:
+                logger.debug(f"Found download URL for asset {asset_urn}: {download_url}")
+                return download_url
+            else:
+                logger.warning(f"Could not find a downloadable URL within the asset data for {asset_urn}. Data keys: {asset_data.keys()}")
+                return None
+
+        elif isinstance(asset_data, requests.Response):
+             logger.error(f"Failed to get asset details for {asset_urn}. Status: {asset_data.status_code}, Body: {asset_data.text[:200]}")
+             return None
+        else:
+             logger.error(f"Invalid data type ({type(asset_data)}) or no data received for asset details {asset_urn}")
+             return None
+
+    except Exception as e:
+         logger.exception(f"Unexpected error retrieving asset URL for {asset_urn}")
+         return None
+
+
+
+def get_linkedin_organization_details(org_urn, access_token):
+    """
+    Get details (like name, logo URL) of an organization by its URN.
+    Extracts numeric ID, calls API, and attempts to resolve logo asset URN to a URL.
+    """
+    # ... (código existente para extraer numeric_org_id y llamar a /organizations/{id}) ...
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202311"
+    }
+    numeric_org_id = None
+    if isinstance(org_urn, str) and org_urn.startswith("urn:li:organization:"):
+        try:
+            numeric_org_id = org_urn.split(':')[-1]
+            if not numeric_org_id.isdigit():
+                 logger.error(f"Extracted ID '{numeric_org_id}' from URN '{org_urn}' is not numeric.")
+                 return None
+        except IndexError:
+            logger.error(f"Could not extract numeric ID from potentially malformed URN: {org_urn}")
+            return None
+    else:
+        logger.error(f"Invalid or non-organization URN provided: {org_urn}")
+        return None
+
+    details_url = f"{LI_API_URL}/organizations/{numeric_org_id}"
+    params = {"fields": "id,localizedName,logoV2"} # Pedir el logoV2 que contiene el asset URN
+
+    logger.debug(f"Calling LinkedIn Organization Details endpoint: {details_url} with params: {params}")
 
     def api_call():
         return requests.get(details_url, headers=headers, params=params)
 
     try:
-        details = fetch_with_retry_log(api_call, f"get_linkedin_organization_details (URN: {org_urn})")
+        details = fetch_with_retry_log(api_call, f"get_linkedin_organization_details (URN: {org_urn} / ID: {numeric_org_id})")
+
         if isinstance(details, dict):
-             logger.debug(f"Details received for {org_urn}: {details.keys()}")
-             return details
+             logger.debug(f"Details received successfully for Org ID {numeric_org_id} (URN: {org_urn}): Keys={details.keys()}")
+             details['urn'] = org_urn # Asegurar que el URN original esté presente
+
+             # --- NUEVO: Intentar obtener URL del logo ---
+             logo_url = None
+             if 'logoV2' in details and isinstance(details['logoV2'], dict):
+                 # Intentar obtener el URN del asset (priorizar 'original' si existe)
+                 asset_urn_to_fetch = details['logoV2'].get('original') or details['logoV2'].get('cropped')
+                 if asset_urn_to_fetch and isinstance(asset_urn_to_fetch, str):
+                     logger.info(f"Attempting to resolve logo asset URN {asset_urn_to_fetch} to URL...")
+                     logo_url = get_linkedin_asset_url(asset_urn_to_fetch, access_token)
+                     if logo_url:
+                         details['logo_url'] = logo_url # <<< Añadir la URL al diccionario de detalles
+                         logger.info(f"Successfully resolved logo URL for {org_urn}")
+                     else:
+                         logger.warning(f"Could not resolve asset URN {asset_urn_to_fetch} to a public URL.")
+                 else:
+                     logger.warning(f"Could not find a valid asset URN inside logoV2 field for {org_urn}. logoV2 data: {details['logoV2']}")
+             else:
+                 logger.warning(f"logoV2 field missing or not a dict in details for {org_urn}.")
+             # --- FIN NUEVO ---
+
+             return details # Devolver detalles (con o sin 'logo_url')
+
+        # ... (resto del manejo de errores sin cambios) ...
+        elif isinstance(details, requests.Response):
+             logger.error(f"Failed to get details for Org ID {numeric_org_id} (URN: {org_urn}). Status: {details.status_code}, Body: {details.text[:200]}")
+             return None
         else:
-             logger.error(f"Invalid data type received for org details {org_urn}: {type(details)}")
+             logger.error(f"Invalid data type ({type(details)}) or no data received for org details ID {numeric_org_id} (URN: {org_urn})")
              return None
     except Exception as e:
-         # fetch_with_retry_log ya loguea el error, sólo logueamos el fallo final aquí
-         logger.error(f"Final error fetching details for LinkedIn org {org_urn}.")
+         logger.exception(f"Unexpected exception while processing details for Org ID {numeric_org_id} (URN: {org_urn}).")
          return None
 
 
@@ -177,72 +296,104 @@ def get_linkedin_organization_details(org_urn, access_token):
 def get_linkedin_page_insights(org_urn, access_token, start_ts_ms, end_ts_ms):
     """
     Extract insights from a LinkedIn organization page.
-    NOTE: This function should ONLY be called for organization URNs.
+    NOTE: Attempts simplified calls if standard ones fail due to permissions.
     """
-    # Validar que es un URN de organización
-    if not org_urn or not org_urn.startswith("urn:li:organization:"):
-        logger.error(f"Invalid call to get_linkedin_page_insights with non-organization URN: {org_urn}")
-        # Devolver None o lanzar un error específico
-        return {'followers': None, 'views': None} # Devolver datos vacíos
+    if not org_urn or not isinstance(org_urn, str) or not org_urn.startswith("urn:li:organization:"):
+        logger.error(f"Invalid URN provided to get_linkedin_page_insights. Expected 'urn:li:organization:...', got: {org_urn}")
+        return None
+
+    logger.info(f"Fetching LinkedIn page insights for valid organization URN: {org_urn}")
 
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "LinkedIn-Version": "202311", # Usar versión consistente
+        "LinkedIn-Version": "202311",
         "X-Restli-Protocol-Version": "2.0.0"
     }
     results = {'followers': None, 'views': None}
     logger.debug(f"Fetching LinkedIn ORG insights for {org_urn} from {start_ts_ms} to {end_ts_ms}")
 
     # --- Followers Statistics ---
-    # Referencia: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/analytics/organization-social-analytics/follower-statistics
-    params_followers = {
-        "q": "organizationalEntity", # Query por entidad organizacional
+    # Original parameters that caused 403
+    # params_followers_orig = {
+    #     "q": "organizationalEntity",
+    #     "organizationalEntity": org_urn,
+    #     "timeIntervals.timeGranularityType": "DAY",
+    #     "timeIntervals.timeRange.start": start_ts_ms,
+    #     "timeIntervals.timeRange.end": end_ts_ms
+    # }
+    # *** SIMPLIFIED Call Attempt ***
+    # Try without timeIntervals first, as the error mentioned them
+    params_followers_simple = {
+        "q": "organizationalEntity",
         "organizationalEntity": org_urn,
-        # Especificar intervalo de tiempo y granularidad
-        "timeIntervals.timeGranularityType": "DAY",
-        "timeIntervals.timeRange.start": start_ts_ms,
-        "timeIntervals.timeRange.end": end_ts_ms
+        # Removed timeIntervals
     }
     follower_stats_url = f"{LI_API_URL}/organizationalEntityFollowerStatistics"
-    def call_followers():
-        # Loguear URL y params exactos para debug
-        logger.debug(f"Calling follower stats: URL={follower_stats_url}, Params={params_followers}")
-        return requests.get(follower_stats_url, headers=headers, params=params_followers)
+
+    def call_followers_simple():
+        logger.debug(f"Calling follower stats (SIMPLE): URL={follower_stats_url}, Params={params_followers_simple}")
+        return requests.get(follower_stats_url, headers=headers, params=params_followers_simple)
+
     try:
-        # Usar fetch_with_retry_log como antes
-        follower_data = fetch_with_retry_log(call_followers, f"get_linkedin_followers (URN: {org_urn})")
-        # Guardar los datos crudos si la llamada fue exitosa (incluso si está vacío)
-        if follower_data is not None: results['followers'] = follower_data
-        logger.debug(f"Follower stats raw response keys: {results['followers'].keys() if isinstance(results['followers'], dict) else 'Call Failed or No Data'}")
-    except Exception as e:
-        # fetch_with_retry_log ya loguea, aquí solo indicamos fallo general
-        logger.error(f"Failed to get LinkedIn followers stats for {org_urn} after retries.")
-        results['followers'] = None # Asegurar que es None en caso de fallo
+        follower_data = fetch_with_retry_log(call_followers_simple, f"get_linkedin_followers (SIMPLE) (URN: {org_urn})")
+        if isinstance(follower_data, dict):
+            logger.warning(f"Follower stats (SIMPLE) received successfully, but may not contain all expected data. Check keys: {follower_data.keys()}")
+            logger.warning(f"FOLLOWER_DATA: {follower_data}")
+            results['followers'] = follower_data
+            logger.info(f"Follower stats (SIMPLE) received successfully.")
+            
+        # Check specific error code - if it's 403, log permission issue
+        elif isinstance(follower_data, requests.Response) and follower_data.status_code == 403:
+             logger.error(f"Permission error (403) getting follower stats (SIMPLE) for {org_urn}. Check OAuth scopes/App Products. Body: {follower_data.text[:200]}")
+        elif isinstance(follower_data, requests.Response): # Log other HTTP errors
+             logger.error(f"Failed to get follower stats (SIMPLE) for {org_urn}. Status: {follower_data.status_code}, Body: {follower_data.text[:200]}")
+        else: # None u otro tipo
+             logger.warning(f"No valid follower stats data received (SIMPLE) for {org_urn}. Received type: {type(follower_data)}")
+    except Exception as e: # Catch potential exceptions from fetch_with_retry_log itself if it raises
+        logger.exception(f"Unexpected error fetching LinkedIn followers stats (SIMPLE) for {org_urn}")
+        results['followers'] = None
 
     # --- Page Statistics ---
-    # Referencia: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/analytics/organization-social-analytics/organization-page-statistics
-    params_views = {
+    # Original fields that caused 403
+    # fields_orig = "totalPageStatistics(views(allDesktopPageViews,allMobilePageViews)),totalShareStatistics(engagement,impressionCount,likeCount,commentCount,shareCount,clickCount)"
+    # *** SIMPLIFIED Call Attempt ***
+    # Try requesting only very basic fields, one by one if necessary
+    fields_simple = "allDesktopPageViews,allMobilePageViews" # Start with the most basic engagement metrics
+
+    params_views_simple = {
         "q": "organization",
         "organization": org_urn,
-        "timeIntervals.timeGranularityType": "DAY",
-        "timeIntervals.timeRange.start": start_ts_ms,
-        "timeIntervals.timeRange.end": end_ts_ms,
-        # Los campos solicitados pueden requerir permisos específicos
-        "fields": "totalPageStatistics(views(allDesktopPageViews,allMobilePageViews)),totalShareStatistics(engagement,impressionCount,likeCount,commentCount,shareCount,clickCount)"
+        # "timeIntervals.timeGranularityType": "DAY", # Keep time intervals here for now
+        # "timeIntervals.timeRange.start": start_ts_ms,
+        # "timeIntervals.timeRange.end": end_ts_ms,
     }
     page_stats_url = f"{LI_API_URL}/organizationPageStatistics"
-    def call_views():
-        logger.debug(f"Calling page stats: URL={page_stats_url}, Params={params_views}")
-        return requests.get(page_stats_url, headers=headers, params=params_views)
+
+    def call_views_simple():
+        logger.debug(f"Calling page stats (SIMPLE): URL={page_stats_url}, Params={params_views_simple}")
+        return requests.get(page_stats_url, headers=headers, params=params_views_simple)
+
     try:
-        views_data = fetch_with_retry_log(call_views, f"get_linkedin_page_views (URN: {org_urn})")
-        if views_data is not None: results['views'] = views_data
-        logger.debug(f"Page stats raw response keys: {results['views'].keys() if isinstance(results['views'], dict) else 'Call Failed or No Data'}")
+        views_data = fetch_with_retry_log(call_views_simple, f"get_linkedin_page_views (SIMPLE) (URN: {org_urn})")
+        if isinstance(views_data, dict):
+            results['views'] = views_data
+            logger.info(f"Page stats (SIMPLE) received successfully.")
+            logger.debug(f"Page stats raw response keys: {results['views'].keys()}")
+        elif isinstance(views_data, requests.Response) and views_data.status_code == 403:
+            logger.error(f"Permission error (403) getting page stats (SIMPLE - fields: {fields_simple}) for {org_urn}. Check OAuth scopes/App Products. Body: {views_data.text[:200]}")
+        elif isinstance(views_data, requests.Response):
+             logger.error(f"Failed to get page stats (SIMPLE) for {org_urn}. Status: {views_data.status_code}, Body: {views_data.text[:200]}")
+        else:
+             logger.warning(f"No valid page stats data received (SIMPLE) for {org_urn}. Received type: {type(views_data)}")
     except Exception as e:
-        logger.error(f"Failed to get LinkedIn page stats for {org_urn} after retries.")
+        logger.exception(f"Unexpected error fetching LinkedIn page stats (SIMPLE) for {org_urn}.")
         results['views'] = None
 
-    # Devolver el diccionario, que contendrá None si las llamadas fallaron
+
+    if results['followers'] is None:
+        logger.warning(f"Follower stats (SIMPLE) for {org_urn} are None or empty. Check permissions.")
+    if results['views'] is None:
+        logger.warning(f"Page stats (SIMPLE) for {org_urn} are None or empty. Check permissions.")
     return results
 
 
@@ -251,10 +402,9 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
     Publish content (text, optional link) to a LinkedIn entity (Profile or Organization).
     Requires 'w_member_social' scope.
     """
-    # 1. Obtener el URN del autor (persona que publica)
     user_info = get_linkedin_user_info(access_token)
     if not user_info or not user_info.get('sub'):
-        logger.error("Could not get LinkedIn user URN (sub) needed for posting.")
+        # logger.error("Could not get LinkedIn user URN (sub) needed for posting.") # Ya logueado en get_linkedin_user_info
         raise Exception("Could not get LinkedIn user URN (sub) needed for posting.")
     author_urn = f"urn:li:person:{user_info['sub']}"
     logger.debug(f"Posting to LinkedIn as author: {author_urn}")
@@ -266,7 +416,6 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
         "Content-Type": "application/json"
     }
 
-    # 2. Construir el cuerpo del post (ShareContent)
     share_content = {
         "shareCommentary": {"text": text_content},
         "shareMediaCategory": "NONE"
@@ -274,12 +423,10 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
     if link_url:
         share_content["shareMediaCategory"] = "ARTICLE"
         article_content = {"originalUrl": link_url}
-        if link_title: article_content["title"] = {"text": link_title} # El título va dentro de un objeto 'text'
-        if link_thumbnail_url: article_content["thumbnails"] = [{"url": link_thumbnail_url}] # Miniaturas como lista
-        share_content["media"] = [{"status": "READY", **article_content}] # Desempaquetar dict
+        if link_title: article_content["title"] = {"text": link_title}
+        if link_thumbnail_url: article_content["thumbnails"] = [{"url": link_thumbnail_url}]
+        share_content["media"] = [{"status": "READY", **article_content}]
 
-
-    # 3. Construir cuerpo completo de la petición UGC Post
     post_body = {
         "author": author_urn,
         "lifecycleState": "PUBLISHED",
@@ -287,26 +434,19 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
             "com.linkedin.ugc.ShareContent": share_content
         },
         "visibility": {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" # O 'CONNECTIONS'
+            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
         }
-        # "containerEntity" se añade condicionalmente abajo
     }
 
-    # Determinar si target_entity_urn es una organización o un perfil
-    # Los URN de organización empiezan por "urn:li:organization:"
-    # Los URN de persona empiezan por "urn:li:person:"
     is_organization_post = False
     if target_entity_urn and isinstance(target_entity_urn, str) and target_entity_urn.startswith("urn:li:organization:"):
         is_organization_post = True
-        post_body["containerEntity"] = target_entity_urn # Añadir sólo para organizaciones
-        logger.info(f"Posting to LinkedIn Organization: {target_entity_urn}")
+        post_body["containerEntity"] = target_entity_urn
+        logger.info(f"Preparing post to LinkedIn Organization: {target_entity_urn}")
     elif target_entity_urn and isinstance(target_entity_urn, str) and target_entity_urn.startswith("urn:li:person:"):
-         # Verificar si el target URN es el mismo que el autor URN
          if target_entity_urn == author_urn:
-              logger.info("Posting to LinkedIn User's own profile.")
-              # No se añade containerEntity para posts al perfil propio
+              logger.info("Preparing post to LinkedIn User's own profile.")
          else:
-              # Postear al perfil de OTRA persona no suele estar permitido vía API
               logger.error(f"Attempting to post to another person's profile ({target_entity_urn}) which is likely not supported.")
               raise ValueError("Posting to another user's profile is not supported via API.")
     else:
@@ -314,32 +454,40 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
          raise ValueError("Invalid target URN for LinkedIn post.")
 
 
-    logger.debug(f"LinkedIn post body: {json.dumps(post_body, indent=2)}") # Log formateado
+    logger.debug(f"LinkedIn post body: {json.dumps(post_body, indent=2)}")
     post_url = f"{LI_API_URL}/ugcPosts"
 
     def api_call():
         return requests.post(post_url, headers=headers, json=post_body)
 
-    # Llamada API y manejo de respuesta
     try:
-        # Usar la response directamente, no el resultado de .json() que podría fallar en 201
+        # fetch_with_retry_log devolverá el objeto Response en caso de éxito (201) o fallo HTTP
         response_obj = fetch_with_retry_log(api_call, f"post_to_linkedin ({'Org' if is_organization_post else 'Profile'}) (Target: {target_entity_urn})")
 
-        # Verificar si fetch_with_retry_log devolvió una respuesta válida de requests
         if isinstance(response_obj, requests.Response):
              post_id_urn = response_obj.headers.get('x-restli-id') or response_obj.headers.get('X-RestLi-Id')
              if response_obj.status_code == 201 and post_id_urn:
                  logger.info(f"Successfully posted to LinkedIn. Post URN: {post_id_urn}")
                  return {"id": post_id_urn}
              else:
-                 # Error incluso si fetch_with_retry_log no lanzó excepción (ej. status 200 OK pero sin ID)
-                 logger.error(f"LinkedIn post attempt returned status {response_obj.status_code} or missing ID header. Expected 201 with ID. Response: {response_obj.text[:200]}")
-                 raise Exception(f"LinkedIn post failed with status {response_obj.status_code} or missing ID.")
+                 # Error HTTP (cliente o servidor) o éxito sin ID esperado
+                 logger.error(f"LinkedIn post attempt failed or succeeded unexpectedly. Status: {response_obj.status_code}, Headers: {response_obj.headers}, Response: {response_obj.text[:200]}")
+                 # Generar una excepción para que la tarea Celery falle o reintente
+                 response_obj.raise_for_status() # Esto lanzará HTTPError si status >= 400
+                 # Si el status es < 400 pero falta el ID, lanzar un error genérico
+                 if not post_id_urn:
+                    raise Exception(f"LinkedIn post succeeded (status {response_obj.status_code}) but missing ID header.")
+                 # Si llegamos aquí, algo muy raro pasó (e.g., status 200 OK?)
+                 raise Exception(f"Unexpected status code {response_obj.status_code} after LinkedIn post.")
+        elif response_obj is None:
+             # Fallo de conexión o JSON después de reintentos
+             logger.error("LinkedIn post failed after retries (connection or parsing error).")
+             raise Exception("LinkedIn post failed after retries (connection or parsing error).")
         else:
-             # Si fetch_with_retry_log devolvió None o texto
-             logger.error(f"LinkedIn post failed. Fetcher did not return a valid Response object. Got: {type(response_obj)}")
-             raise Exception("LinkedIn post failed (invalid response from API call handler).")
+             # Tipo inesperado devuelto por fetch_with_retry_log
+             logger.error(f"LinkedIn post failed. Fetcher returned unexpected type: {type(response_obj)}")
+             raise Exception("LinkedIn post failed (unexpected response from API call handler).")
 
     except Exception as e:
-         logger.exception(f"Exception during LinkedIn post to {target_entity_urn}")
-         raise e # Re-lanzar
+         logger.exception(f"Exception during LinkedIn post processing for {target_entity_urn}")
+         raise e # Re-lanzar para que Celery maneje el reintento/fallo
