@@ -156,51 +156,83 @@ def transform_and_load_linkedin(data, org_urn, conn):
 
     rows_added = 0
     records = []
-
+    log_prefix = "[LINKEDIN TRANSFORM]"
+    
     # 1. Procesar Seguidores
+    logger.debug(f"{log_prefix} Processing LinkedIn data for {org_urn}")
     if data.get('followers') and 'elements' in data['followers']:
+        logger.debug(f"{log_prefix} Processing LinkedIn followers")
         for element in data['followers']['elements']:
             try:
-                # LinkedIn devuelve timestamps en ms
-                start_ts_ms = element.get('timeRange', {}).get('start')
-                if start_ts_ms:
-                    metric_date = datetime.fromtimestamp(start_ts_ms / 1000).date()
-                    total_followers = element.get('followerCounts', {}).get('organicFollowerCount', 0) + \
-                                      element.get('followerCounts', {}).get('paidFollowerCount', 0)
-                    if total_followers is not None: # Asegurarse que no es None
-                         records.append({
-                            "metric_date": metric_date, "platform": "LinkedIn", "account_id": org_urn,
-                            "metric_name": "follower_total", "metric_value": int(total_followers)
-                         })
+                # Process total followers across all categories
+                total_organic = 0
+                total_paid = 0
+                
+                # Sum up followers from each category
+                for category in ['followerCountsByFunction', 'followerCountsByStaffCountRange', 
+                               'followerCountsBySeniority', 'followerCountsByIndustry']:
+                    if category in element:
+                        for item in element[category]:
+                            if 'followerCounts' in item:
+                                total_organic += item['followerCounts'].get('organicFollowerCount', 0)
+                                total_paid += item['followerCounts'].get('paidFollowerCount', 0)
+                
+                # Calculate average since we're counting the same followers in different categories
+                num_categories = sum(1 for cat in ['followerCountsByFunction', 'followerCountsByStaffCountRange', 
+                                                 'followerCountsBySeniority', 'followerCountsByIndustry'] 
+                                   if cat in element)
+                if num_categories > 0:
+                    total_organic = total_organic // num_categories
+                    total_paid = total_paid // num_categories
+                
+                total_followers = total_organic + total_paid
+                
+                if total_followers > 0:
+                    metric_date = date.today()  # Use current date for follower stats
+                    records.append({
+                        "metric_date": metric_date,
+                        "platform": "LinkedIn",
+                        "account_id": org_urn,
+                        "metric_name": "follower_total",
+                        "metric_value": int(total_followers)
+                    })
             except (KeyError, ValueError, TypeError) as e:
-                 print(f"Skipping invalid LI follower record: {element} - Error: {e}")
-                 continue
+                logger.error(f"Error processing LinkedIn follower data: {e}")
+                continue
 
     # 2. Procesar Vistas de Página
     if data.get('views') and 'elements' in data['views']:
-         for element in data['views']['elements']:
+        for element in data['views']['elements']:
             try:
-                start_ts_ms = element.get('timeRange', {}).get('start')
-                if start_ts_ms:
-                    metric_date = datetime.fromtimestamp(start_ts_ms / 1000).date()
-                    # LinkedIn puede devolver varias métricas de vistas, elegimos una o sumamos
-                    page_views = element.get('totalPageViews', {}).get('pageViews', 0) # Ejemplo
-                    # unique_impressions = element.get('totalPageViews', {}).get('uniqueImpressions', 0)
-                    if page_views is not None:
-                        records.append({
-                            "metric_date": metric_date, "platform": "LinkedIn", "account_id": org_urn,
-                            "metric_name": "page_views", "metric_value": int(page_views)
-                        })
-                    # if unique_impressions is not None:
-                    #     records.append({
-                    #         "metric_date": metric_date, "platform": "LinkedIn", "account_id": org_urn,
-                    #         "metric_name": "unique_impressions", "metric_value": int(unique_impressions)
-                    #     })
+                if 'totalPageStatistics' in element and 'views' in element['totalPageStatistics']:
+                    views_data = element['totalPageStatistics']['views']
+                    
+                    # Extract key metrics
+                    metrics_to_extract = {
+                        'allPageViews': 'page_views_total',
+                        'allDesktopPageViews': 'page_views_desktop',
+                        'allMobilePageViews': 'page_views_mobile',
+                        'aboutPageViews': 'page_views_about',
+                        'overviewPageViews': 'page_views_overview'
+                    }
+                    
+                    metric_date = date.today()  # Use current date since no date provided
+                    
+                    for source_metric, target_name in metrics_to_extract.items():
+                        value = views_data.get(source_metric, {}).get('pageViews', 0)
+                        if value is not None:
+                            records.append({
+                                "metric_date": metric_date,
+                                "platform": "LinkedIn",
+                                "account_id": org_urn,
+                                "metric_name": target_name,
+                                "metric_value": int(value)
+                            })
             except (KeyError, ValueError, TypeError) as e:
-                print(f"Skipping invalid LI page view record: {element} - Error: {e}")
+                logger.error(f"Error processing LinkedIn page views: {e}")
                 continue
-    
-    # 3. Procesar Otras Métricas
+
+    # 3. Insert records
     rows_inserted = 0
     if records:
          cur = None
