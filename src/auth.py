@@ -318,84 +318,141 @@ def process_auth_params():
 
 def load_user_accounts(platform: str) -> bool:
     """
-    Loads user's own profile and any managed organizations/pages.
-    For LinkedIn, includes the user's profile and organizations.
+    Loads user's own profile and any managed organizations/pages for the specified platform.
+    For LinkedIn, it fetches the user's profile info and then their managed organizations.
+    Stores the result as a list of dictionaries in st.session_state.user_accounts[platform].
+    Each dictionary has a 'type' key ('profile' or 'organization').
+    Returns True if accounts were loaded/refreshed, False otherwise.
     """
     if platform != "LinkedIn":
         logger.warning(f"Account loading only implemented for LinkedIn, requested for {platform}")
         return False
 
+    # Verificar si ya hemos cargado en esta ejecución y no forzamos recarga (evitar llamadas API innecesarias)
+    # Puedes añadir un argumento force_reload=False si quieres controlarlo más finamente
+    if f"{platform}_accounts_loaded_flag" in st.session_state and st.session_state[f"{platform}_accounts_loaded_flag"]:
+        logger.debug(f"Accounts for {platform} already loaded in this session run.")
+        return False # Ya estaban cargadas
+
     is_connected = st.session_state.get("li_connected", False)
     token_dict = st.session_state.get("li_token_data")
-    user_info = st.session_state.get("li_user_info") # Necesitamos user info para el perfil
+    # Usar la información de usuario ya almacenada en session_state
+    user_info = st.session_state.get("li_user_info")
 
-    if not is_connected or not token_dict or not user_info:
-        logger.warning("Cannot load accounts for LinkedIn: Not connected, no token, or no user info.")
+    if not is_connected or not token_dict or not isinstance(token_dict, dict) \
+       or not user_info or not isinstance(user_info, dict):
+        logger.warning("Cannot load accounts for LinkedIn: Not connected, token missing/invalid, or user info missing/invalid.")
         return False
 
     user_access_token = token_dict.get("access_token")
-    user_profile_id = user_info.get("sub") # El ID ('sub') del usuario
+    # El ID ('sub') del usuario de la información obtenida durante el login/verificación
+    user_profile_id = user_info.get("sub")
     user_profile_name = user_info.get("name", "Your Profile")
+    user_profile_picture = user_info.get("picture") # Obtener foto de perfil si existe
 
     if not user_access_token or not user_profile_id:
-        logger.error("Cannot load accounts for LinkedIn: Access token or User ID (sub) missing.")
+        logger.error("Cannot load accounts for LinkedIn: Access token or User ID (sub) missing from session state.")
         return False
 
-    logger.info(f"Loading accounts for {platform}...")
+    logger.info(f"Loading accounts structure for {platform} (Profile + Organizations)...")
     accounts_list = []
-    success = False
+    loaded_something_new = False # Flag para saber si hubo cambios
 
-    # 1. Añadir el perfil personal del usuario como una "cuenta" seleccionable
-    accounts_list.append({
-        "id": f"urn:li:person:{user_profile_id}", # Usar el URN de persona como ID
-        "urn": f"urn:li:person:{user_profile_id}",
-        "name": f"{user_profile_name} (Personal Profile)",
+    # --- 1. Añadir el perfil personal del usuario ---
+    # Construir el URN de persona
+    person_urn = f"urn:li:person:{user_profile_id}"
+    profile_account = {
+        "id": person_urn, # Usar URN como ID consistente
+        "urn": person_urn,
+        "name": user_profile_name, # Nombre del usuario
         "platform": "LinkedIn",
-        "type": "profile" # Añadir tipo para distinguir
-    })
-    logger.debug(f"Added personal profile to account list: {accounts_list[0]['name']}")
+        "type": "profile", # <<< Tipo 'profile' para distinguir
+        "logo": {"picture": user_profile_picture} # Usar 'logo' para consistencia, poner foto aquí
+    }
+    accounts_list.append(profile_account)
+    logger.debug(f"Added personal profile to account list: {profile_account['name']}")
+    # Consideramos esto un cambio inicial si la lista estaba vacía antes
+    if not st.session_state.user_accounts.get("LinkedIn"):
+        loaded_something_new = True
 
-    # 2. Intentar cargar organizaciones administradas (como antes)
+    # --- 2. Intentar cargar organizaciones administradas ---
     try:
-        logger.debug("Calling API for LinkedIn organizations...")
-        api_result = get_linkedin_organizations(user_access_token) # Esta función ya devuelve lista de dicts con 'urn', 'name', 'platform'
-        if api_result is not None:
-            logger.debug(f"Received {len(api_result)} LI organizations from API.")
-            # Añadir tipo 'organization' y asegurar 'id'
-            for org in api_result:
-                org['type'] = 'organization'
-                if 'urn' not in org and 'id' in org: 
-                    org['urn'] = org['id'] # Asegurar URN
-                elif 'id' not in org and 'urn' in org: 
-                    org['id'] = org['urn'] # Asegurar ID
+        logger.debug(f"Fetching managed LinkedIn organizations for user {user_profile_id}...")
+        # Usamos la función API que ya debería devolver la lista formateada
+        # con 'urn', 'id', 'name', 'platform', 'logo', y 'type'='organization'
+        managed_organizations = get_linkedin_organizations(user_access_token)
 
-                accounts_list.append(org)
-            success = True # Considerar éxito si al menos el perfil se añadió
+        if isinstance(managed_organizations, list):
+            logger.info(f"Received {len(managed_organizations)} managed LI organizations from API.")
+            # Filtrar Nones o errores si la API pudiera devolverlos
+            valid_orgs = [org for org in managed_organizations if isinstance(org, dict) and org.get('type') == 'organization']
+
+            # Comparar con lo que ya teníamos para ver si hubo cambios
+            current_orgs_urns = {acc.get('urn') for acc in st.session_state.user_accounts.get("LinkedIn", []) if acc.get('type') == 'organization'}
+            new_orgs_urns = {org.get('urn') for org in valid_orgs}
+
+            if current_orgs_urns != new_orgs_urns:
+                loaded_something_new = True
+                logger.debug("Organization list changed.")
+
+            accounts_list.extend(valid_orgs) # Añadir organizaciones válidas a la lista
+
+        elif managed_organizations is None:
+            logger.warning("get_linkedin_organizations returned None. Assuming no managed organizations.")
+            # Verificar si antes sí había organizaciones para marcar cambio
+            if any(acc.get('type') == 'organization' for acc in st.session_state.user_accounts.get("LinkedIn", [])):
+                loaded_something_new = True
         else:
-            logger.warning("get_linkedin_organizations returned None or failed, only personal profile available.")
-            success = True # Aún así es éxito porque tenemos el perfil personal
+             logger.error(f"get_linkedin_organizations returned unexpected type: {type(managed_organizations)}")
+             # Marcar cambio si antes había organizaciones
+             if any(acc.get('type') == 'organization' for acc in st.session_state.user_accounts.get("LinkedIn", [])):
+                loaded_something_new = True
+
 
     except Exception as e:
         logger.exception(f"Failed loading LinkedIn organizations due to exception: {e}")
         st.error(f"Error cargando organizaciones de LinkedIn: {e}")
-        # No fallar aquí, continuar con el perfil personal si ya se añadió
-        success = True if accounts_list else False # Éxito si al menos el perfil está
+        # No fallar, continuar solo con el perfil si ya se añadió
+        # Marcar cambio si antes había organizaciones y ahora no
+        if any(acc.get('type') == 'organization' for acc in st.session_state.user_accounts.get("LinkedIn", [])):
+            loaded_something_new = True
 
-    # Actualizar st.session_state
-    if success:
-        if not isinstance(st.session_state.user_accounts, dict): st.session_state.user_accounts = {}
+
+    # --- 3. Actualizar st.session_state si hubo cambios ---
+    if loaded_something_new:
+        logger.info(f"Updating session state with {len(accounts_list)} total accounts for {platform}.")
+        if not isinstance(st.session_state.user_accounts, dict):
+            st.session_state.user_accounts = {} # Asegurar que es un dict
         st.session_state.user_accounts[platform] = accounts_list
-        logger.info(f"Successfully loaded {len(accounts_list)} account(s) (profile/orgs) for {platform} into session state.")
-        # Seleccionar el perfil personal por defecto si no hay nada seleccionado
+
+        # Resetear selección si la lista cambió para forzar re-selección o default
+        # Opcional: intentar mantener la selección si el URN todavía existe
+        current_selection = st.session_state.get("selected_account")
+        if current_selection:
+             current_urn = current_selection.get("urn")
+             if current_urn not in {acc.get("urn") for acc in accounts_list}:
+                  logger.info("Previously selected account no longer available. Resetting selection.")
+                  st.session_state.selected_account = None
+             else:
+                  logger.debug("Previously selected account still available.")
+        else:
+             st.session_state.selected_account = None # Asegurar None si no había nada
+
+        # Seleccionar el perfil personal por defecto si no hay nada seleccionado después del reset/cambio
         if st.session_state.get("selected_account") is None and accounts_list:
-             st.session_state.selected_account = accounts_list[0] # Seleccionar el perfil personal
-             logger.info(f"Default account selected: {accounts_list[0]['name']}")
+             st.session_state.selected_account = accounts_list[0] # Seleccionar el perfil personal (índice 0)
+             logger.info(f"Default account selected after load/refresh: {accounts_list[0].get('name')}")
 
     else:
-        logger.error(f"Failed to load any accounts (including personal profile) for {platform}.")
-        if isinstance(st.session_state.user_accounts, dict): st.session_state.user_accounts[platform] = []
+        logger.debug(f"No changes detected in account list for {platform}.")
 
-    return success
+    # Marcar que la carga se intentó/realizó en esta ejecución
+    st.session_state[f"{platform}_accounts_loaded_flag"] = True
+
+    # Devolver True si hubo cambios o si la carga fue exitosa (incluso si no hubo cambios)
+    # O devolver `loaded_something_new` si solo quieres indicar si hubo cambios.
+    # Devolver True indica que la carga se completó (con o sin cambios).
+    return True # Indica que el proceso de carga se completó
 
 def display_auth_status(sidebar: bool = True):
     """Display auth status, user info, and disconnect button below profile info."""
@@ -458,86 +515,100 @@ def display_auth_status(sidebar: bool = True):
 
 
 def display_account_selector(sidebar: bool = True):
-    """Displays selector for LinkedIn Profile/Organizations, or just confirms profile."""
+    """
+    Displays a selector for LinkedIn Profile/Organizations using plain text options.
+    """
     container = st.sidebar if sidebar else st
 
-    # Verificar conexión a LinkedIn
     if not st.session_state.get("li_connected"):
         container.info("Connect to LinkedIn to select an account.")
+        if st.session_state.get("selected_account") is not None:
+            st.session_state.selected_account = None
         return None
 
-    # Obtener cuentas cargadas para LinkedIn
     user_accounts_dict = st.session_state.get("user_accounts", {})
     linkedin_accounts = []
     if isinstance(user_accounts_dict, dict):
-        accounts = user_accounts_dict.get("LinkedIn", [])
-        if isinstance(accounts, list):
-            linkedin_accounts = accounts
-        else: logger.warning("LinkedIn accounts data is not a list.")
-    else: logger.warning("user_accounts is not a dictionary.")
+        accounts_from_state = user_accounts_dict.get("LinkedIn", [])
+        if isinstance(accounts_from_state, list):
+            linkedin_accounts = accounts_from_state
+        else: logger.warning("LinkedIn accounts data in session state is not a list.")
+    else: logger.warning("user_accounts in session state is not a dictionary.")
 
-    # Si no hay cuentas (ni siquiera el perfil, lo cual sería un error en load_user_accounts)
     if not linkedin_accounts:
         container.warning("No LinkedIn profile or organizations found/loaded.")
-        if st.session_state.get("selected_account"): st.session_state.selected_account = None
+        if st.session_state.get("selected_account") is not None:
+            st.session_state.selected_account = None
         return None
 
     container.subheader("🎯 Active Account")
 
-    # Si SÓLO está el perfil personal
+    # --- Caso: Solo el perfil personal ---
     if len(linkedin_accounts) == 1 and linkedin_accounts[0].get("type") == "profile":
         profile_info = linkedin_accounts[0]
-        container.info(f"Using: **{profile_info.get('name', 'Your Profile')}**")
-        # Asegurar que está seleccionado en session_state
+        # Solo mostrar texto aquí también para consistencia
+        container.info(f"Using: **{profile_info.get('name', 'Your Profile')}** (Profile)")
         if st.session_state.get("selected_account") != profile_info:
              st.session_state.selected_account = profile_info
-             # No hacer rerun aquí para evitar bucles si algo más cambia
         return st.session_state.selected_account
 
-    # Si hay MÚLTIPLES cuentas (perfil + orgs)
+    # --- Caso: Múltiples cuentas (perfil + organizaciones) ---
     else:
-        def format_account_option(account):
-            if account is None: return "Select Account..."
-            name = account.get('name', '?')
-            acc_type = account.get('type', 'unknown').capitalize()
-            # Simplificar nombre si es el perfil personal
-            if acc_type == 'Profile': name = name.replace(" (Personal Profile)", "")
+        def format_account_option_text(account_dict):
+            if account_dict is None:
+                return "Select Account..." # Placeholder si usamos None
+            name = account_dict.get('name', 'Unknown Account')
+            acc_type = account_dict.get('type', 'unknown').capitalize()
+            # Quitar información extra del nombre del perfil si existe
+            if acc_type == 'Profile':
+                name = name.replace(" (Personal Profile)", "")
             return f"{name} ({acc_type})"
 
-        options_list = [None] + linkedin_accounts # [None] para la opción "Select..."
-        currently_selected = st.session_state.get("selected_account")
+        currently_selected_account = st.session_state.get("selected_account")
         current_index = 0
+        options_list = linkedin_accounts
 
-        # Encontrar índice del seleccionado actualmente (usando ID/URN)
-        if currently_selected and isinstance(currently_selected, dict) and currently_selected.get("platform") == "LinkedIn":
-            current_id = currently_selected.get('id')
-            try:
-                current_index = next(i for i, acc in enumerate(options_list) if acc and acc.get('id') == current_id)
-            except StopIteration:
-                logger.warning(f"Previously selected account ID {current_id} not found in options. Resetting.")
-                st.session_state.selected_account = None; current_index = 0
-        elif not currently_selected and linkedin_accounts: # Si no hay selección previa, seleccionar el perfil (índice 1 porque 0 es None)
-             if linkedin_accounts[0].get("type") == "profile":
-                  current_index = 1
-                  st.session_state.selected_account = linkedin_accounts[0] # Establecer selección inicial
+        if isinstance(currently_selected_account, dict):
+            current_urn = currently_selected_account.get('urn')
+            if current_urn:
+                try:
+                    current_index = next(i for i, acc in enumerate(options_list)
+                                         if isinstance(acc, dict) and acc.get('urn') == current_urn)
+                except StopIteration:
+                    logger.warning(f"Previously selected account URN {current_urn} not found. Defaulting.")
+                    current_index = 0
+                    st.session_state.selected_account = options_list[0] if options_list else None
+            else:
+                 current_index = 0
+                 st.session_state.selected_account = options_list[0] if options_list else None
+        elif options_list:
+             current_index = 0
+             st.session_state.selected_account = options_list[0]
 
+        # --- Usar st.selectbox (más compacto) o st.radio con format_func de texto ---
+        # Volvemos a selectbox ya que no necesitamos renderizar HTML
         selected_index = container.selectbox(
-            label="Select Account to Use",
-            options=range(len(options_list)),
-            format_func=lambda i: format_account_option(options_list[i]),
-            index=current_index, key="linkedin_account_selector",
-            help="Choose your personal profile or an organization to interact with."
+            label="Select Profile or Organization",
+            options=range(len(options_list)), # Opciones son los índices
+            format_func=lambda i: format_account_option_text(options_list[i]), # << USA LA VERSIÓN DE TEXTO
+            index=current_index,
+            key="linkedin_account_selector", # Reusar clave o cambiar si da problemas
+            help="Choose your personal profile or an organization page to interact with."
         )
-        newly_selected = options_list[selected_index]
+        # --- FIN WIDGET ---
 
-        # Actualizar estado si la selección cambió
-        current_sel_id = st.session_state.get("selected_account", {}).get('id') if isinstance(st.session_state.get("selected_account"), dict) else None
-        new_sel_id = newly_selected.get('id') if isinstance(newly_selected, dict) else None
+        newly_selected_account = options_list[selected_index]
 
-        if new_sel_id != current_sel_id:
-            st.session_state.selected_account = newly_selected
-            logger.info(f"Account selection changed to: {format_account_option(newly_selected)}" if newly_selected else "Account selection cleared.")
-            st.rerun() # Rerun para que el resto de la app use la nueva cuenta
+        # Actualizar el estado y Rerun SI la selección cambió
+        previous_urn = st.session_state.get("selected_account", {}).get('urn') if isinstance(st.session_state.get("selected_account"), dict) else None
+        new_urn = newly_selected_account.get('urn')
+
+        if new_urn != previous_urn:
+            st.session_state.selected_account = newly_selected_account
+            if newly_selected_account:
+                logger.info(f"Account selection changed to: {format_account_option_text(newly_selected_account)}")
+            else:
+                logger.error(f"Newly selected account is invalid (Index: {selected_index})") # Log si algo va mal
+            st.rerun()
 
         return st.session_state.get("selected_account")
-
