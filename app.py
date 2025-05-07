@@ -2,6 +2,8 @@
 
 import pandas as pd
 import streamlit as st
+from PIL import Image
+
 from datetime import datetime, timedelta, timezone
 import plotly.express as px
 import plotly.graph_objects as go
@@ -36,12 +38,14 @@ try:
 except ImportError as e:
     st.error(f"Fatal Import Error (data): {e}")
     logger.critical(f"Import Error (data): {e}", exc_info=True); st.stop()
-
 # --- End Imports ---
 
-fastapi_client = requests.Session()
+st.set_page_config(
+    page_title="AIPost", 
+    layout="wide", 
+)
 
-st.set_page_config(layout="wide", page_title="AIPost")
+fastapi_client = requests.Session()
 
 # --- Initialization and Session Verification ---
 try:
@@ -56,7 +60,6 @@ try:
     is_connected_now = st.session_state.get("li_connected")
     logger.info(f"Initialization complete. Session valid: {session_was_valid}, New login processed: {processed_new_login}, Currently connected: {is_connected_now}")
 
-    # --- MODIFICACIÓN: Cargar cuentas (incluyendo orgs) ---
     accounts_loaded_or_refreshed = False
     if is_connected_now:
         # Siempre intentar cargar/refrescar si no están o si es un nuevo login/verificación
@@ -87,7 +90,7 @@ with st.sidebar:
     display_auth_status(sidebar=True)
     st.divider()
 
-    # --- MODIFICACIÓN: Selector de Cuentas ---
+    # --- Selector de Cuentas ---
     # Asumimos que display_account_selector ahora:
     # 1. Muestra la jerarquía Persona -> Orgs
     # 2. Guarda el *diccionario completo* del item seleccionado en st.session_state.selected_account
@@ -97,7 +100,7 @@ with st.sidebar:
     st.divider()
     selected_tab = st.radio("Navigation", ["Analytics", "Content Generation", "Scheduling"], key="main_nav")
 
-# --- MODIFICACIÓN: Procesar cuenta seleccionada ---
+# --- Procesar cuenta seleccionada ---
 active_platform = None
 active_account_id = None # ID/URN a USAR en las llamadas API (será el de la ORG si se selecciona una org)
 active_account_type = None # 'person' o 'organization'
@@ -146,7 +149,7 @@ if selected_tab == "Analytics":
         st.info("Please select an account or organization in the sidebar to see analytics.")
     elif not user_access_token:
          st.error(f"Cannot display analytics: User access token for {active_platform} is missing.")
-    # --- MODIFICACIÓN: Solo permitir fetch/display si es una ORGANIZACIÓN ---
+    # --- Solo permitir fetch/display si es una ORGANIZACIÓN ---
     elif active_account_type != "organization":
          st.warning(f"Analytics are only available for LinkedIn Organization pages. Please select an organization from the sidebar.")
     else:
@@ -184,7 +187,7 @@ if selected_tab == "Analytics":
                             json={k: v for k, v in payload.items() if v is not None},
                             headers=auth_headers
                         )
-                        # ... (manejo de respuesta y polling sin cambios, asumimos que funciona con el ID de la org) ...
+
                         response.raise_for_status()
                         task_info = response.json()
                         st.session_state['etl_task_id'] = task_info.get('task_id')
@@ -316,6 +319,7 @@ if selected_tab == "Analytics":
          # Show Graphs
         st.subheader("📈 Main Trends")
         if not df_timeseries.empty:
+            logger.debug(f"Timeseries DataFrame for {active_account_id}:\n{df_timeseries.head()}")
             # Ensure timeseries metrics requested exist in the dataframe columns
             metrics_to_plot = [m for m in platform_timeseries if m in df_timeseries.columns and m not in ['follower_total', 'page_fans']]
 
@@ -371,7 +375,6 @@ elif selected_tab == "Content Generation":
         st.info(f"Publishing on: **{selected_display_name} ({active_platform} Organization)**")
 
         with st.form("content_generation_form"):
-             # ... (inputs del formulario sin cambios) ...
              st.subheader("1. Define your Publication")
              niche = st.text_input("Niche / Target Audience")
              tone = st.selectbox("Message Tone", ["Professional", "Informal", "Inspirational", "Funny", "Informative"])
@@ -380,7 +383,6 @@ elif selected_tab == "Content Generation":
              submitted_generate = st.form_submit_button("✨ Generate Draft Content")
 
              if submitted_generate:
-                  # ... (lógica generación draft sin cambios) ...
                   with st.spinner("Generating content..."): time.sleep(1)
                   draft_content = f"Draft ({tone}) for {selected_display_name}:\n\n{description}\nNiche: {niche}."
                   if link_url_input: draft_content += f"\nLink: {link_url_input}"
@@ -389,7 +391,6 @@ elif selected_tab == "Content Generation":
 
         # Validate and Publish/Schedule Area
         if 'draft_content' in st.session_state:
-             # ... (área de validación/edición sin cambios) ...
              st.subheader("2. Validate and Publish/Schedule")
              final_content = st.text_area("Edit content:", value=st.session_state.get('draft_content', ''), height=150, key="final_content_area")
              final_link_url = st.text_input("Final Link URL:", value=st.session_state.get('draft_link_url', ''), key="final_link_url_area")
