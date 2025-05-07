@@ -85,7 +85,7 @@ def get_linkedin_user_info(access_token):
 
 def get_linkedin_organizations(access_token):
     """
-    Get LinkedIn organizations where the user has an ADMINISTRATOR role.
+    Get LinkedIn organizations where the user has an ADMINISTRATOR or ANALYTICS role.
     Requires 'r_organization_admin' scope.
     """
     headers = {
@@ -95,11 +95,11 @@ def get_linkedin_organizations(access_token):
     }
     params = {
         "q": "roleAssignee",
-        "role": "ADMINISTRATOR",
+        # "role": "ADMINISTRATOR",
         "state": "APPROVED",
         "count": 50
     }
-    logger.debug("Fetching LinkedIn organizations with ADMIN role...")
+    logger.debug("Fetching LinkedIn organizations with ADMIN or ANALYTICS role...")
 
     def api_call():
         return requests.get(f"{LI_API_URL}/organizationAcls", headers=headers, params=params)
@@ -114,8 +114,9 @@ def get_linkedin_organizations(access_token):
             logger.debug(f"Processing potential Organization ACL for URN: {org_urn}")
             role_in_acl = element.get('role')
             state_in_acl = element.get('state')
+            logger.debug(f"Role in ACL: {role_in_acl}, State in ACL: {state_in_acl}, URN: {org_urn}")
 
-            if org_urn and role_in_acl == "ADMINISTRATOR" and state_in_acl == "APPROVED":
+            if org_urn and role_in_acl in ["ADMINISTRATOR", "ANALYST"] and state_in_acl == "APPROVED":
                 logger.debug(f"ADMIN/APPROVED role found for URN: {org_urn}. Fetching details...")
                 org_info = get_linkedin_organization_details(org_urn, access_token)
                 if org_info and isinstance(org_info, dict):
@@ -130,7 +131,7 @@ def get_linkedin_organizations(access_token):
                         "name": org_name,
                         "logo": logo_data, # Pasar datos del logo si existen
                         "platform": "LinkedIn",
-                        "type": "organization" # <<< AÑADIR TIPO
+                        "type": "organization"
                     })
                     logger.info(f"Successfully added organization: {org_name} (URN: {org_urn})")
                 else:
@@ -259,28 +260,8 @@ def get_linkedin_organization_details(org_urn, access_token):
              logger.debug(f"Details received successfully for Org ID {numeric_org_id} (URN: {org_urn}): Keys={details.keys()}")
              details['urn'] = org_urn # Asegurar que el URN original esté presente
 
-             # --- NUEVO: Intentar obtener URL del logo ---
-             logo_url = None
-             if 'logoV2' in details and isinstance(details['logoV2'], dict):
-                 # Intentar obtener el URN del asset (priorizar 'original' si existe)
-                 asset_urn_to_fetch = details['logoV2'].get('original') or details['logoV2'].get('cropped')
-                 if asset_urn_to_fetch and isinstance(asset_urn_to_fetch, str):
-                     logger.info(f"Attempting to resolve logo asset URN {asset_urn_to_fetch} to URL...")
-                     logo_url = get_linkedin_asset_url(asset_urn_to_fetch, access_token)
-                     if logo_url:
-                         details['logo_url'] = logo_url # <<< Añadir la URL al diccionario de detalles
-                         logger.info(f"Successfully resolved logo URL for {org_urn}")
-                     else:
-                         logger.warning(f"Could not resolve asset URN {asset_urn_to_fetch} to a public URL.")
-                 else:
-                     logger.warning(f"Could not find a valid asset URN inside logoV2 field for {org_urn}. logoV2 data: {details['logoV2']}")
-             else:
-                 logger.warning(f"logoV2 field missing or not a dict in details for {org_urn}.")
-             # --- FIN NUEVO ---
-
              return details # Devolver detalles (con o sin 'logo_url')
 
-        # ... (resto del manejo de errores sin cambios) ...
         elif isinstance(details, requests.Response):
              logger.error(f"Failed to get details for Org ID {numeric_org_id} (URN: {org_urn}). Status: {details.status_code}, Body: {details.text[:200]}")
              return None
