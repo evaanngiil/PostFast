@@ -350,12 +350,21 @@ def get_latest_kpis(platform: str, account_id: str, kpi_metrics: tuple) -> dict:
     if not kpi_metrics: 
         return kpis
 
+    # Map generic metric names to their stored counterparts
+    metric_mapping = {
+        'follower_total': 'follower_total',
+        'page_views': 'page_views_total'  # Map to the actual stored metric name
+    }
+
+    # Transform requested metrics to their stored names
+    stored_metrics = [metric_mapping.get(m, m) for m in kpi_metrics]
+    
     try:
         conn = get_db_connection(read_only=True)
         if not conn: 
             raise Exception("DB connection failed")
 
-        metrics_placeholders = ','.join(['%s'] * len(kpi_metrics))
+        metrics_placeholders = ','.join(['%s'] * len(stored_metrics))
         # Query con ROW_NUMBER() es estándar SQL y funciona en PostgreSQL
         query = f"""
             WITH RankedMetrics AS (
@@ -369,14 +378,17 @@ def get_latest_kpis(platform: str, account_id: str, kpi_metrics: tuple) -> dict:
             FROM RankedMetrics
             WHERE rn = 1;
         """
-        params = [platform, account_id] + list(kpi_metrics)
+        params = [platform, account_id] + stored_metrics
 
         cur = conn.cursor()
         cur.execute(query, params)
         results = cur.fetchall() # Lista de diccionarios
         cur.close()
 
-        kpis = {row['metric_name']: row['metric_value'] for row in results} # Convertir a dict
+        # Map the results back to the requested metric names
+        reverse_mapping = {v: k for k, v in metric_mapping.items()}
+        kpis = {reverse_mapping.get(row['metric_name'], row['metric_name']): row['metric_value'] 
+                for row in results}
         logger.info(f"Fetched latest KPIs from PostgreSQL: {kpis}")
 
     except psycopg.Error as e:
