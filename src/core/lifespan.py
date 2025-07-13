@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.core.logger import logger
-from src.agents.sample_agent.agent import create_workflow
+from src.agents.content_agent.agent import create_workflow
 from src.data_processing import setup_database
+from src.dependencies.graph import graph
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,10 +19,12 @@ async def lifespan(app: FastAPI):
         setup_database()
         logger.info("Database inicializada correctamente")
         
-        # Verificar que el grafo está disponible
-        app.state.graph = create_workflow()
-
-        logger.info("✅ Grafo inicializado correctamente")
+        # Inicializar LangGraph
+        app.state.graph = graph or create_workflow()
+        if not app.state.graph:
+            raise Exception("LangGraph no se ha inicializado correctamente.")
+        
+        logger.info("LangGraph inicializado correctamente")
         
         yield
         

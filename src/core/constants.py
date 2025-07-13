@@ -28,3 +28,16 @@ LI_API_URL = "https://api.linkedin.com/v2"
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("CRITICAL: DATABASE_URL environment variable not set.")
+
+# Lazy import to avoid circular import
+def get_pro_llm():
+    from src.agents.utils.llm_factory import LLMFactory
+    return LLMFactory.get_llm(llm_name="gemini-2.0-flash-lite")
+
+def get_flash_llm():
+    from src.agents.utils.llm_factory import LLMFactory
+    return LLMFactory.get_llm(llm_name="gemini-2.0-flash-lite")
+
+# TODO: CAMBIAR GET_PRO A FLASH SOLO> ES PRUEBA MOMENTARIA
+PRO_LLM = get_pro_llm()
+FLASH_LLM = get_flash_llm()
