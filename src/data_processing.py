@@ -321,12 +321,13 @@ def get_metrics_timeseries(platform: str, account_id: str, metrics: list, start_
         cur.close()
 
         if results:
+            print(f"[TIMESERIES] Fetched {results} from PostgreSQL for timeseries.")
             df_raw = pd.DataFrame(results)
             # Pivotear como antes
             df = df_raw.pivot(index='metric_date', columns='metric_name', values='metric_value')
-            df.index = pd.to_datetime(df.index)
-            # Tratar NaNs si es necesario (ej. convertir a 0 o ffill)
-            # df.fillna(0, inplace=True)
+            logger.debug(f"[TIMESERIES] DF: {df}.")
+            # Tratar NaNs. Convertir a 0
+            df.fillna(0, inplace=True)
             logger.info(f"Successfully fetched {len(df_raw)} rows for timeseries from PostgreSQL.")
         else:
             logger.info("No timeseries data found in PostgreSQL for the specified criteria.")
