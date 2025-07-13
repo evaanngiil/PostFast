@@ -5,10 +5,15 @@ from src.social_apis import (
      get_instagram_insights, get_linkedin_page_insights,
     post_to_instagram, post_to_linkedin_organization
 )
+from src.agents.content_agent.callbacks import TokenUsageCallback
+from src.dependencies.graph import graph
+from celery.exceptions import Ignore
+
 from datetime import datetime, timezone
 import time
-import psycopg # Asegurarse que psycopg está importado si se usa aquí
-
+import psycopg
+import asyncio
+import uuid
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=5) # bind=True to access the task instance
 def run_etl_pipeline_task(self, platform, account_id, access_token, start_date_str, end_date_str, **kwargs):
@@ -151,3 +156,74 @@ def publish_post_task(self, platform, account_id, access_token, content, **kwarg
         logger.exception(f"[Task ID: {self.request.id}] Post publication task failed for {platform} - Account: {account_id}. Error: {exc}")
         # self.retry(exc=exc)
         return {"status": "Failed", "platform": platform, "account_id": account_id, "error": str(exc)}
+
+
+@celery_app.task(name="content_generation_task", bind=True)
+def content_generation_task(self, payload_dict: dict, checkpoint: dict = None):
+    """
+    Tarea Celery que ejecuta el grafo y devuelve el resultado.
+    Celery almacenará este valor de retorno en el backend de resultados (Redis).
+    """
+    logger.info(f"[Task ID: {self.request.id}] LangGraph task started. Resuming: {bool(checkpoint)}")
+    
+    try:
+        # Import the global graph object for Celery/background context
+        if not graph:
+            logger.error("LangGraph is not initialized. Cannot process content generation request.")
+            raise Exception("LangGraph is not initialized.")
+
+        thread_id = str(uuid.uuid4())
+
+        # Si no hay checkpoint, es una ejecución nueva
+        if not checkpoint:
+            initial_state = {
+                **(payload_dict or {}), "token_usage_by_node": {}, "total_tokens": 0, "review_notes": "",
+                "revision_cycles": 0, "creative_brief": None, "draft_content": None,
+                "refined_content": None, "formatted_output": None, "final_post": None, "human_feedback" : ""
+            }
+        else:
+            # Si hay checkpoint, este ya contiene todo el estado anterior
+            initial_state = checkpoint
+
+
+        callback = TokenUsageCallback(initial_state)
+
+        logger.warning(f"[AI LangGraph] Invoking graph with thread ID {thread_id} and input: {initial_state}")
+
+        # Ejecutar el grafo de forma asíncrona
+        final_state = asyncio.run(
+            graph.ainvoke(
+                initial_state, 
+                config={"callbacks": [callback], "configurable": {"thread_id": thread_id}}
+            )
+        )
+
+        # Si el grafo se interrumpió, `final_state` contiene el checkpoint
+        if final_state.get('__interrupt__'):
+            logger.info(f"[Task ID: {self.request.id}] Graph interrupted, pending human input.")
+            # Actualizamos el estado de la tarea en Celery
+            self.update_state(
+                state='PENDING_USER_INPUT',
+                meta={
+                    'draft_content': final_state['extract_final_post']['final_post'],
+                    'checkpoint': final_state # Guardamos el checkpoint completo
+                }
+            )
+            # Detenemos la tarea sin marcarla como un error
+            raise Ignore()
+
+        result = {
+            "final_post": final_state.get("final_post", "Error: No se pudo generar el contenido."),
+            "token_usage_per_node": final_state.get("token_usage_by_node"),
+            "total_tokens_used": final_state.get("total_tokens")
+        }
+
+        logger.info(f"[Task ID: {self.request.id}] LangGraph execution successful. Returning result.")
+        
+        # Simplemente devuelve el resultado. Celery lo guarda en Redis.
+        return result
+
+    except Exception as e:
+        logger.exception(f"[Task ID: {self.request.id}] LangGraph task failed: {e}")
+        # Deja que la excepción se propague. Celery la capturará y marcará la tarea como FAILURE.
+        raise e
