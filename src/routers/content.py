@@ -189,7 +189,7 @@ async def generate_post_start(
     # .delay() devuelve un objeto AsyncResult que contiene el ID de la tarea
     task = content_generation_task.delay(payload_dict=payload_dict)
 
-    logger.info(f"User {user_info.get('id', 'N/A')} enqueued task {task.id} after passing rate limits.")
+    logger.info(f"User {user_info.get('id', 'N/A')} enqueued task {task.id}.")
 
     return {"task_id": task.id}
 
@@ -210,9 +210,15 @@ async def get_generation_status(task_id: str):
     elif task_result.state == 'FAILURE':
         # La tarea falló. `task_result.result` contiene la excepción.
         return {"status": "FAILURE", "error": str(task_result.result)}
+    elif task_result.state == 'PENDING_USER_INPUT':
+        # La tarea está esperando input del usuario
+        return {
+            "status": "PENDING_USER_INPUT", 
+            "info": task_result.info,
+            "draft_content": task_result.info.get('draft_content') if task_result.info else None
+        }
     else:
-        # Otros estados posibles (RETRY, REVOKED, etc.)
-        return {"status": task_result.state}
+        return {"status": task_result.state, "info": task_result.info}
 
 
 @content_router.post("/generate_post/resume", status_code=status.HTTP_202_ACCEPTED)

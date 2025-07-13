@@ -65,6 +65,18 @@ class TokenUsageCallback(BaseCallbackHandler):
             import traceback
             traceback.print_exc()
 
+    def get_token_usage_by_node(self) -> Dict[str, int]:
+        """
+        Retorna el diccionario con el uso de tokens por nodo.
+        """
+        return self._state.get("token_usage_by_node", {})
+
+    def get_total_tokens(self) -> int:
+        """
+        Retorna el total de tokens utilizados en toda la ejecución del grafo.
+        """
+        return self._state.get("total_tokens", 0)
+
 def get_token_callback(config: RunnableConfig) -> TokenUsageCallback | None:
     """Función de utilidad para encontrar nuestro callback específico en el manager."""
     # El config["callbacks"] es el objeto AsyncCallbackManager
@@ -75,3 +87,4 @@ def get_token_callback(config: RunnableConfig) -> TokenUsageCallback | None:
             if isinstance(handler, TokenUsageCallback):
                 return handler
     return None
+
