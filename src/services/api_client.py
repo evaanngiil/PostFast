@@ -158,13 +158,13 @@ def schedule_or_publish_post(
     return response.json()
 
 
-def resume_content_generation(task_id: str, feedback: str) -> str:
-    """Reanuda una tarea de generación de contenido con el feedback del usuario."""
+def resume_content_generation(task_id: str, feedback: str) -> Dict[str, Any]:
+    """Reanuda una tarea de generación de contenido con feedback del usuario."""
     client = get_api_client()
     endpoint = f"{FASTAPI_URL}/content/generate_post/resume"
 
     payload = {"task_id": task_id, "feedback": feedback}
     response = client.post(endpoint, json=payload)
     response.raise_for_status()
-    
-    return response.json()["task_id"]
+
+    return response.json().json()
