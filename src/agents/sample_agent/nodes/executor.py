@@ -2,7 +2,7 @@ from typing import Optional
 from langchain_core.runnables import RunnableConfig
 from langchain_core.messages import HumanMessage, AIMessage
 
-from src.agents.sample_agent.agent_state import InputState, InternalState, OutputState
+from src.agents.content_agent.agent_state import InputState, InternalState, OutputState
 from src.agents.utils.build_chains import sample_chain
 from src.core.logger import logger
 
