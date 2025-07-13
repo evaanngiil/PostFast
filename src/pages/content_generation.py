@@ -26,12 +26,15 @@ def handle_polling(max_attempts=30, delay=3):
         try:
             status_data = api_client.get_generation_status(task_id)
             status = status_data.get("status")
-
+            logger.warning(f"Polling status: {status} for task ID: {task_id}")        
+    
             if status == "PENDING_USER_INPUT":
                 st.success("🤖 The first draft is ready for your review!")
                 st.session_state['generation_task_info'] = status_data.get('info')
+                del st.session_state['polling_attempts']
+                st.rerun()
 
-            if status == "SUCCESS":
+            elif status == "SUCCESS":
                 st.success("✨ Content generated successfully!")
                 result = status_data.get("result", {})
                 st.session_state['draft_content'] = result.get("final_post")
@@ -45,7 +48,6 @@ def handle_polling(max_attempts=30, delay=3):
                 del st.session_state['polling_attempts']
                 st.rerun()
 
-            
             elif status == "FAILURE":
                 st.error(f"Content generation failed: {status_data.get('error', 'Unknown error')}")
                 del st.session_state['generation_task_id']

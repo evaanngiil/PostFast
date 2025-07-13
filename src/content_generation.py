@@ -1,12 +1,9 @@
-# --- START OF FILE src/content_generation.py ---
-
 from datetime import datetime, timezone
 import requests
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 import streamlit as st
 from dataclasses import dataclass
 
-from src.core.constants import FASTAPI_URL
 from src.core.logger import logger
 
 # --- UI Component: Form ---
@@ -23,14 +20,15 @@ def render_content_form() -> tuple[str, str, str, str, bool]:
         
         return niche, tone, query_description, link_url, submitted
 
+
 @dataclass
 class ContentGenerationResult:
-    final_post: str  # Cambiado de final_content a final_post
+    final_post: str
     token_usage_per_node: Dict[str, int]
     total_tokens_used: int
 
 def render_publication_controls(
-    final_post: str,  # Cambiado de final_content a final_post
+    final_post: str,
     final_link_url: str,
     selected_display_name: str,
     active_platform: str,
