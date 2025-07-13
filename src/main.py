@@ -17,7 +17,6 @@ from fastapi.security import OAuth2PasswordBearer
 
 
 # --- Imports ---
-# Intenta importar routers, si fallan, loguea pero no detengas la app (útil para inicio)
 try:
     from src.routers.content import content_router
     from src.routers.analytics import analytics_router
