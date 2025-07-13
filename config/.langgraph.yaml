@@ -1,4 +1,4 @@
 graphs:
   - name: sample_graph
-    path: src/agents/sample_agent/agent.py
+    path: src/agents/content_agent/agent.py
     variable: graph
