@@ -1,11 +1,17 @@
-from fastapi import APIRouter, HTTPException, Request, Depends # Añadir Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, HTTPException, Depends, Request, status
+from pydantic import BaseModel, Field
 from typing import Optional
 from langchain_core.messages import HumanMessage
 from src.core.logger import logger
 from src.celery_app import celery_app
 from src.tasks import publish_post_task
 from datetime import datetime, timezone
+
+import uuid
+from fastapi import APIRouter, Depends
+from src.dependencies.graph import get_graph
+from src.tasks import content_generation_task
+
 
 # Importar la dependencia de autenticación
 try:
@@ -15,28 +21,36 @@ except ImportError:
      # Fallback o error si la estructura es diferente
      logger.critical("Could not import get_current_session_data_from_token dependency!")
      # Define un dummy para que FastAPI no falle al cargar, pero lanzará error en runtime
-     async def get_current_session_data_from_token():
+     async def get_current_session_data_from_token(token: str | None = None):
           raise NotImplementedError("Auth dependency not loaded")
 
 content_router = APIRouter()
 
 # --- Modelos Pydantic para Payloads ---
 class SchedulePostPayload(BaseModel):
-    platform: str # Ya no es necesario si lo obtenemos del token? Podría ser útil para verificar.
-    account_id: str # ID de la página/org 
+    platform: str
+    account_id: str
     content: str
-    scheduled_time_str: Optional[str] = None # ISO 8601 format
-    image_url: Optional[str] = None # Para IG (o posts con imagen en otras plat.)
-    link_url: Optional[str] = None # Para posts con enlaces
+    scheduled_time_str: Optional[str] = None
+    link_url: Optional[str] = None
 
-class QueryRequest(BaseModel):
-    query: str
+class ContentGenerationPayload(BaseModel):
+    query: str = Field(..., description="The main description of what to post.")
+    tone: str = Field(..., description="The desired tone of the message (e.g., Professional, Funny).")
+    niche: str = Field(..., description="The target audience or niche.")
+    account_name: str = Field(..., description="The name of the account publishing the content.")
+    link_url: Optional[str] = Field(None, description="An optional URL to include or summarize.")
 
-# --- Endpoints ---
+
+class ResumePayload(BaseModel):
+    task_id: str
+    feedback: str # El feedback del usuario. Puede ser "aprobar" o un texto.
+
+
 @content_router.post("/schedule_post")
 async def schedule_post_endpoint(
-    payload: SchedulePostPayload, # Recibir payload como modelo Pydantic
-    session_data: dict = Depends(get_current_session_data_from_token) # AUTENTICACIÓN
+    payload: SchedulePostPayload,
+    session_data: dict = Depends(get_current_session_data_from_token)
 ):
     """
     Schedule a post using Celery. Authenticated via Bearer token.
@@ -108,32 +122,126 @@ async def schedule_post_endpoint(
         raise HTTPException(status_code=500, detail="Failed to schedule post task")
 
 
-# Asegurarse que este endpoint también esté protegido si es necesario
-@content_router.post("/generate_post")
-async def generate_post_endpoint(
-    request: QueryRequest,
-    fastapi_request: Request,
-    session_data: dict = Depends(get_current_session_data_from_token) # <-- AÑADIR PROTECCIÓN
+# @content_router.post("/generate_post")
+# async def generate_post_endpoint(
+#     payload: ContentGenerationPayload,
+#     request: Request,
+#     graph = Depends(get_graph),
+#     session_data: dict = Depends(get_current_session_data_from_token)
+# ):
+#     """
+#     Generates post content using LangGraph, accepting a full context payload.
+#     """
+#     user_info = session_data.get("user_info", {})
+#     logger.warning(f"[AI LangGraph] Content generation requested by user {user_info.get('id', 'N/A')} for account '{payload.account_name}'")
+
+
+#     try:
+#         thread_id = str(uuid.uuid4())
+#         thread = {"configurable": {"thread_id": thread_id}}
+
+#         # --- PASO 1: Transformar el payload de entrada (modelo Pydantic) al estado INTERNO inicial ---
+#         initial_internal_state = {
+#             "query": payload.query,
+#             "tone": payload.tone,
+#             "niche": payload.niche,
+#             "account_name": payload.account_name,
+#             "link_url": payload.link_url,
+#             # Inicializar el resto de campos internos
+#             "creative_brief": None,
+#             "draft_content": None,
+#             "refined_content": None,
+#             "final_post": None,
+#             "review_notes": "",
+#             "revision_cycles": 0
+#         }
+
+#         logger.warning(f"[AI LangGraph] Invoking graph with thread ID {thread_id} and input: {initial_internal_state}")
+        
+#         # --- PASO 2: Invocar el grafo con el estado interno ---
+#         final_internal_state = await graph.ainvoke(initial_internal_state, thread)
+
+#         logger.debug(f"LangGraph raw response: {final_internal_state}")
+
+#         # --- PASO 3: Transformar el estado interno final al payload de salida ---
+#         final_content = final_internal_state.get("final_post", "Error: No se pudo generar el contenido final.")
+
+#         return {"final_content": final_content}
+#     except Exception as e:
+#         logger.exception(f"Error processing content generation request: {e}")
+#         raise HTTPException(status_code=500, detail=f"Error generating content: {e}")
+
+
+@content_router.post(
+    "/generate_post", 
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def generate_post_start(
+    payload: ContentGenerationPayload,
+    session_data: dict = Depends(get_current_session_data_from_token)
 ):
     """
-    Generates post content using LangGraph. Requires authentication.
+    Encola una tarea de generación de contenido en Celery y devuelve el ID de la tarea.
     """
     user_info = session_data.get("user_info", {})
-    logger.info(f"Content generation requested by user {user_info.get('id', 'N/A')}: '{request.query[:50]}...'")
-    try:
-        app = fastapi_request.app
-        graph = app.state.graph # Asume que el grafo está en app.state
+    payload_dict = payload.model_dump()
 
-        thread = {"configurable": {"thread_id": "user_" + str(user_info.get('id', 'anonymous'))}} # Usar ID de usuario para thread_id
+    # .delay() devuelve un objeto AsyncResult que contiene el ID de la tarea
+    task = content_generation_task.delay(payload_dict=payload_dict)
 
-        input_data = {"messages": [HumanMessage(content=request.query)]}
-        response = await graph.ainvoke(input_data, thread)
+    logger.info(f"User {user_info.get('id', 'N/A')} enqueued task {task.id} after passing rate limits.")
 
-        output_content = response.get("output") if isinstance(response, dict) else str(response)
-        logger.debug(f"LangGraph raw response: {response}")
+    return {"task_id": task.id}
 
-        return {"query": request.query, "response": output_content}
+@content_router.get("/generate_post/status/{task_id}")
+async def get_generation_status(task_id: str):
+    """
 
-    except Exception as e:
-        logger.exception(f"Error processing content generation request: {e}")
-        raise HTTPException(status_code=500, detail=f"Error generating content: {e}")
+    Consulta el backend de resultados de Celery (Redis) para obtener el estado de una tarea.
+    """
+    task_result = celery_app.AsyncResult(task_id)
+
+    if task_result.state == 'PENDING':
+        # La tarea todavía no ha sido recogida por un worker o está en proceso.
+        return {"status": "PENDING"}
+    elif task_result.state == 'SUCCESS':
+        # La tarea terminó con éxito. `task_result.result` contiene el valor devuelto.
+        return {"status": "SUCCESS", "result": task_result.result}
+    elif task_result.state == 'FAILURE':
+        # La tarea falló. `task_result.result` contiene la excepción.
+        return {"status": "FAILURE", "error": str(task_result.result)}
+    else:
+        # Otros estados posibles (RETRY, REVOKED, etc.)
+        return {"status": task_result.state}
+
+
+@content_router.post("/generate_post/resume", status_code=status.HTTP_202_ACCEPTED)
+async def generate_post_resume(
+    payload: ResumePayload,
+    session_data: dict = Depends(get_current_session_data_from_token)
+):
+    """
+    Reanuda una tarea de generación de contenido que fue interrumpida para recibir feedback humano.
+    """
+    # 1. Obtener el estado de la tarea original
+    original_task_result = celery_app.AsyncResult(payload.task_id)
+    if original_task_result.state != 'PENDING_USER_INPUT':
+        raise HTTPException(status_code=400, detail="Task is not pending user input.")
+
+    # 2. Extraer el checkpoint guardado
+    checkpoint = original_task_result.info.get('checkpoint')
+    if not checkpoint:
+        raise HTTPException(status_code=404, detail="Checkpoint not found for the task.")
+
+    # 3. Inyectar el feedback del usuario en el estado
+    checkpoint['human_feedback'] = payload.feedback
+    
+    # 4. Lanzar la MISMA tarea, pero esta vez pasándole el checkpoint para que reanude
+    # Usamos el mismo ID de tarea para que el resultado final sobreescriba el estado de interrupción.
+    content_generation_task.apply_async(
+        kwargs={"checkpoint": checkpoint}, # Pasamos el checkpoint como keyword argument
+        task_id=payload.task_id
+    )
+
+    logger.info(f"Resuming task {payload.task_id} with user feedback.")
+    return {"task_id": payload.task_id, "message": "Content generation task resumed."}
