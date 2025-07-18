@@ -22,6 +22,7 @@ async def analyze_audience(state: InternalState, config: RunnableConfig) -> Inte
     if state.get('revision_cycles') is None:
         state['revision_cycles'] = 0
         print(f"⚠️  revision_cycles inicializado a 0 (era None)")
+        
     print(f"REVISION CYCLE: {state.get('revision_cycles')}")
     prompt = ChatPromptTemplate.from_template(
         """Eres un estratega de marketing de contenidos. Tu tarea es crear un 'briefing creativo' para un redactor.
