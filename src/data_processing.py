@@ -1,4 +1,3 @@
-import duckdb
 import psycopg
 from psycopg.rows import dict_row # Para obtener resultados como diccionarios
 import pandas as pd
