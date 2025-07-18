@@ -8,6 +8,8 @@ class InputState(TypedDict):
     niche: str
     account_name: str
     link_url: Optional[str]
+    # Es opcional, porque en la primera ejecución puede ser None.
+    human_feedback: Optional[str]
 
 # --- Estado Interno de Trabajo ---
 # Define todos los campos que los agentes pueden leer y escribir.
@@ -20,14 +22,13 @@ class InternalState(InputState):
     final_post: Optional[str] 
     review_notes: Optional[str]
     revision_cycles: Optional[int]
-    human_feedback: Optional[str]
     token_usage_by_node: Dict[str, int]
     total_tokens: int
 
 # --- Estado de Salida ---
 # Define los datos que el grafo DEVUELVE al finalizar.
 class OutputState(TypedDict):
-    final_post: str  # Cambiado de final_content a final_post
+    final_post: str
     total_tokens_used: int
 
     
