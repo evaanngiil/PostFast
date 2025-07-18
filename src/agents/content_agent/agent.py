@@ -79,8 +79,8 @@ def create_workflow(checkpointer: Checkpointer = None):
         compiled_graph = graph_builder.compile(checkpointer=checkpointer)
         
         try:
-            # compiled_graph.get_graph().draw_mermaid_png(output_file_path="graph_v3_fixed.png")
-            logger.info("Corrected workflow graph 'graph_v3_fixed.png' generated.")
+            compiled_graph.get_graph().draw_mermaid_png(output_file_path="graph.png")
+            logger.info("Corrected workflow graph 'graph.png' generated.")
         except Exception as e:
             logger.warning(f"Could not generate graph image: {e}")
 
