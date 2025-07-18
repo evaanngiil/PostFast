@@ -23,9 +23,10 @@ def render_content_form() -> tuple[str, str, str, str, bool]:
 
 @dataclass
 class ContentGenerationResult:
-    final_post: str
-    token_usage_per_node: Dict[str, int]
-    total_tokens_used: int
+    def __init__(self, final_post, token_usage_per_node, total_tokens_used):
+        self.final_post = final_post
+        self.token_usage_per_node = token_usage_per_node
+        self.total_tokens_used = total_tokens_used
 
 def render_publication_controls(
     final_post: str,
