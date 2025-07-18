@@ -8,13 +8,50 @@ from src.social_apis import (
 from src.agents.content_agent.callbacks import TokenUsageCallback
 from src.dependencies.graph import graph
 from src.content_generation import ContentGenerationResult
-from langchain_core.runnables import RunnableConfig
+from src.agents.content_agent.nodes.quality_gate import HumanReviewRequired
 
+from langchain_core.runnables import RunnableConfig
+from celery.exceptions import Ignore
 from datetime import datetime, timezone
 import time
 import psycopg
 import asyncio
 import uuid
+
+def run_graph_sync(input_data: dict, run_config: RunnableConfig):
+    """
+    Helper function to run the graph synchronously, handling event loop properly.
+    """
+    try:
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import threading
+                import concurrent.futures
+                
+                def run_in_thread():
+                    new_loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(new_loop)
+                    try:
+                        return new_loop.run_until_complete(graph.ainvoke(input_data, config=run_config))
+                    finally:
+                        new_loop.close()
+                
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(run_in_thread)
+                    return future.result()
+            else:
+                return loop.run_until_complete(graph.ainvoke(input_data, config=run_config))
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(graph.ainvoke(input_data, config=run_config))
+            finally:
+                loop.close()
+    except Exception as e:
+        logger.error(f"Error in run_graph_sync: {e}")
+        raise
 
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=5) # bind=True to access the task instance
 def run_etl_pipeline_task(self, platform, account_id, access_token, start_date_str, end_date_str, **kwargs):
@@ -177,6 +214,9 @@ def content_generation_task(self, payload_dict=None, checkpoint=None):
             thread_id = str(uuid.uuid4())
 
             # Transformar payload a estado interno
+            if payload_dict is None:
+                raise ValueError("payload_dict cannot be None for new task execution")
+                
             graph_state = {
                 "query": payload_dict["query"],
                 "tone": payload_dict["tone"],
@@ -189,11 +229,13 @@ def content_generation_task(self, payload_dict=None, checkpoint=None):
                 "final_post": None,
                 "review_notes": "",
                 "revision_cycles": 0,
-                "human_feedback": None
+                "human_feedback": None,
+                "token_usage_by_node": {},
+                "total_tokens": 0
             }
 
         # Configuración del hilo
-        thread_config = {"configurable": {"thread_id": thread_id}}
+        thread_config = RunnableConfig(configurable={"thread_id": thread_id})
 
         # Crear callback para contar tokens
         token_callback = TokenUsageCallback(graph_state)
@@ -202,11 +244,12 @@ def content_generation_task(self, payload_dict=None, checkpoint=None):
 
         try:
             if checkpoint:
-                # Reanudar desde checkpoint
-                final_state = asyncio.run(graph.ainvoke(None, config=run_config))
+                # Reanudar desde checkpoint - pasar el estado restaurado, no None
+                logger.info(f"[TASK content] Resuming")
+                final_state = run_graph_sync(graph_state, run_config)
             else:
                 # Nueva ejecución
-                final_state = asyncio.run(graph.ainvoke(graph_state, config=run_config))
+                final_state = run_graph_sync(graph_state, run_config)
 
             # Si llegamos aquí, el workflow terminó exitosamente
             result = ContentGenerationResult(
@@ -215,66 +258,117 @@ def content_generation_task(self, payload_dict=None, checkpoint=None):
                 total_tokens_used=token_callback.get_total_tokens()
             )
 
-            logger.debug(f"Final state after content generation: {final_state}")
-            logger.info(f"Final Result: {result.__dict__}")
-
             logger.info(f"Content generation completed successfully. Task ID: {self.request.id}")
             return result.__dict__
 
+
+        except HumanReviewRequired as human_review_exc:
+            logger.info(f"Human review required. Task ID: {self.request.id}")
+            
+            # Usar el estado de la excepción
+            current_state = human_review_exc.state
+            
+            checkpoint_data = {
+                'thread_id': thread_id,
+                'graph_state': current_state
+            }
+            
+            # Extraer el borrador más reciente para mostrar en la UI
+            draft_content = (
+                current_state.get('final_post') or 
+                current_state.get('draft_content', 'Draft not available')
+            )
+
+            # Actualizar el estado de la tarea en Celery
+            self.update_state(
+                state='PENDING_USER_INPUT',
+                meta={
+                    'status': 'PENDING_USER_INPUT',
+                    'checkpoint': checkpoint_data,
+                    'draft_content': draft_content # Importante para la UI
+                }
+            )
+
+            
+            raise Ignore()
+          
         except Exception as e:
-
-            logger.error(f" [INTERRUPTION] Error during content generation task {self.request.id}: {e}")
-
-            # Check if this is a LangGraph interruption by examining the exception message
-            if "interrupt" in str(e).lower() or hasattr(e, '__class__') and 'interrupt' in e.__class__.__name__.lower():
-                logger.info(f"Workflow interrupted for human feedback. Task ID: {self.request.id}")
-
-                # Obtener el estado actual del checkpoint
-                try:
-                    current_checkpoint = graph.get_state(thread_config)
-                    if current_checkpoint and current_checkpoint.values:
-                        current_state = current_checkpoint.values
-
-                        # Crear el checkpoint para reanudar
-                        checkpoint_data = {
-                            'thread_id': thread_id,
-                            'graph_state': current_state
-                        }
-
-                        # Buscar el contenido del draft en orden de prioridad
-                        draft_content = (
-                            current_state.get('final_post') or 
-                            current_state.get('formatted_output') or 
-                            current_state.get('refined_content') or 
-                            current_state.get('draft_content', 'Draft content not available')
-                        )
-
-                        from celery.exceptions import Ignore
-                        
-                        # Set the result manually in Redis
-                        self.update_state(
-                            state='PENDING_USER_INPUT',
-                            meta={
-                                'status': 'PENDING_USER_INPUT',
-                                'checkpoint': checkpoint_data,
-                                'draft_content': draft_content
-                            }
-                        )
-
-                        # Use Ignore to prevent Celery from marking as SUCCESS/FAILURE
-                        raise Ignore()
-                    else:
-                        raise Exception("No checkpoint found after interruption")
-                except Ignore:
-                    # Re-raise Ignore to properly stop the task
-                    raise
-                except Exception as checkpoint_error:
-                    logger.error(f"Error handling workflow interruption: {checkpoint_error}")
-                    raise
-            else:
-                # Es un error real, no una interrupción
-                raise
+            logger.error(f"An unexpected error occurred in task {self.request.id}: {e}", exc_info=True)
+            raise
 
     except Exception as e:
         logger.exception(f"Error in content generation task {self.request.id}: {e}")
+        raise
+
+# This task resumes a suspended LangGraph workflow and injects human feedback.
+@celery_app.task(bind=True)
+def resume_content_generation_task(self, checkpoint, payload):
+    """
+    Reanuda una tarea de generación de contenido después del feedback humano.
+    """
+    try:
+        logger.info(f"Resuming task {self.request.id} from checkpoint with feedback.")
+        
+        # 1. Validar y extraer datos necesarios
+        if not checkpoint: raise ValueError("Checkpoint is missing.")
+        thread_id = checkpoint.get('thread_id')
+        if not thread_id: raise ValueError("Invalid checkpoint: Missing thread_id.")
+                
+        # Obtener el estado COMPLETO del grafo desde el checkpoint.
+        graph_state = checkpoint.get('graph_state')
+        if not graph_state:
+            raise ValueError("Graph state missing from checkpoint.")
+
+        # Obtener el feedback del payload.
+        feedback = payload.get('feedback')
+        if not feedback:
+            raise ValueError("Feedback is missing in payload.")
+
+        # Actualizar el campo 'human_feedback' DENTRO del diccionario de estado completo.
+        graph_state['human_feedback'] = feedback
+        
+        logger.info(f"Injecting feedback: '{feedback}' into thread {thread_id}")
+
+        # Configurar el grafo para la reanudación.
+        token_callback = TokenUsageCallback(graph_state)
+        run_config = RunnableConfig(
+            configurable={"thread_id": thread_id},
+            callbacks=[token_callback]
+        )
+        
+        # Optimización para el caso "aprobar" (sigue siendo válida)
+        if feedback.strip().lower() == 'aprobar':
+            logger.info("Approval feedback received. Finalizing task.")
+            # ... (esta parte no necesita cambios)
+            final_post = graph_state.get('final_post', 'Contenido no encontrado.')
+            result = ContentGenerationResult(final_post, graph_state.get('token_usage_by_node', {}), graph_state.get('total_tokens', 0))
+            return result.__dict__
+
+        # Ejecutar el grafo pasando el estado COMPLETO y ACTUALIZADO.
+        # Esto pasará la validación de `InputState` porque `graph_state` ya contiene `query`, etc.
+        try:
+            final_state = run_graph_sync(graph_state, run_config)
+
+            result = ContentGenerationResult(
+                final_post=final_state.get("final_post", "Error: No se pudo generar el contenido final."),
+                token_usage_per_node=token_callback.get_token_usage_by_node(),
+                total_tokens_used=token_callback.get_total_tokens()
+            )
+            logger.info(f"Content generation RESUMED and COMPLETED. Task ID: {self.request.id}")
+            return result.__dict__
+
+        except HumanReviewRequired as human_review_exc:
+            logger.info(f"Pausing AGAIN for review after refinement. Task ID: {self.request.id}.")
+            current_state = human_review_exc.state
+            new_checkpoint = {'thread_id': thread_id, 'graph_state': current_state}
+            draft_content = current_state.get('final_post') or current_state.get('draft_content')
+
+            self.update_state(
+                state='PENDING_USER_INPUT',
+                meta={'status': 'PENDING_USER_INPUT', 'checkpoint': new_checkpoint, 'draft_content': draft_content}
+            )
+            raise Ignore()
+
+    except Exception as e:
+        logger.exception(f"FATAL error resuming task {self.request.id}: {e}")
         raise
