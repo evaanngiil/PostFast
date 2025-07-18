@@ -1,10 +1,8 @@
-from langchain_core.prompts import ChatPromptTemplate
 from src.agents.content_agent.agent_state import InternalState
 from src.core.constants import PRO_LLM, GENAI_API_KEY
 from src.core.logger import logger
-from src.agents.content_agent.callbacks import get_token_callback
-from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langgraph.errors import NodeInterrupt
 
 PRO_LLM  = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash-lite",
@@ -13,20 +11,19 @@ PRO_LLM  = ChatGoogleGenerativeAI(
 )
 
 def human_review_gate(state: InternalState) -> str:
-    """Decide si el proceso termina o necesita otro ciclo de refinamiento basado en el feedback humano."""
     print("--- Realizando Control de Calidad Humano ---")
-
-    feedback = state.get("human_feedback", "").strip()
-
-    # If no feedback provided, this means we need user input
-    if not feedback:
-        print("--- Esperando feedback humano ---")
-        # Return a default that triggers the interruption logic
-        return "refine"
-    elif feedback.lower() == "aprobar" or feedback.lower() == "approve":
-        print("--- Feedback Humano: Aprobado. Finalizando ciclo. ---")
+    print(f"[DEBUG] Nodo human_review_gate - Estado de entrada: {state}")
+    feedback = state.get("human_feedback", "")
+    if feedback is None or feedback == "":
+        print("--- Esperando feedback humano. Interrumpiendo workflow. ---")
+        print(f"[DEBUG] Nodo human_review_gate interrumpe el grafo esperando feedback humano")
+        raise NodeInterrupt("Workflow paused for human review")
+    feedback = feedback.strip().lower()
+    if feedback == "aprobar":
+        print("--- Feedback Humano: APROBADO. Finalizando. ---")
+        print(f"[DEBUG] Nodo human_review_gate retorna: 'end'")
         return "end"
-
     else:
         print("--- Feedback Humano: REQUIERE MEJORA. Continuando ciclo. ---")
+        print(f"[DEBUG] Nodo human_review_gate retorna: 'refine'")
         return "refine"
