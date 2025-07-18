@@ -42,6 +42,7 @@ async def extract_final_post(state: InternalState, config: RunnableConfig) -> In
         "formatted_output": state.get("formatted_output", "")
     }, config=config)
     
+    
     state['final_post'] = clean_post.content # Sobrescribir final_post con la versión limpia
 
     return state
