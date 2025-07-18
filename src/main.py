@@ -7,12 +7,11 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from typing import Optional # Para Optional Header
-import duckdb
 import psycopg
+from psycopg2 import pool
 from psycopg.rows import dict_row
 from requests_oauthlib import OAuth2Session
 from datetime import datetime, timedelta, timezone
-import requests
 from fastapi.security import OAuth2PasswordBearer
 
 
