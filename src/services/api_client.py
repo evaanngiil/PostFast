@@ -167,4 +167,4 @@ def resume_content_generation(task_id: str, feedback: str) -> Dict[str, Any]:
     response = client.post(endpoint, json=payload)
     response.raise_for_status()
 
-    return response.json().json()
+    return response.json()
