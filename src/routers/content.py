@@ -4,13 +4,12 @@ from typing import Optional
 from langchain_core.messages import HumanMessage
 from src.core.logger import logger
 from src.celery_app import celery_app
-from src.tasks import publish_post_task
+from src.tasks import publish_post_task, content_generation_task, resume_content_generation_task
 from datetime import datetime, timezone
 
 import uuid
 from fastapi import APIRouter, Depends
 from src.dependencies.graph import get_graph
-from src.tasks import content_generation_task
 
 
 # Importar la dependencia de autenticación
@@ -239,15 +238,11 @@ async def generate_post_resume(
     if not checkpoint:
         raise HTTPException(status_code=404, detail="Checkpoint not found for the task.")
 
-    # 3. Inyectar el feedback del usuario en el estado
-    checkpoint['human_feedback'] = payload.feedback
-    
-    # 4. Lanzar la MISMA tarea, pero esta vez pasándole el checkpoint para que reanude
-    # Usamos el mismo ID de tarea para que el resultado final sobreescriba el estado de interrupción.
-    content_generation_task.apply_async(
-        kwargs={"checkpoint": checkpoint}, # Pasamos el checkpoint como keyword argument
-        task_id=payload.task_id
+    # 3. Lanzar la tarea de reanudación con el checkpoint y el payload
+    resume_task = resume_content_generation_task.delay(
+        checkpoint=checkpoint,
+        payload=payload.model_dump()  # Convertir el payload a dict
     )
 
-    logger.info(f"Resuming task {payload.task_id} with user feedback.")
-    return {"task_id": payload.task_id, "message": "Content generation task resumed."}
+    logger.info(f"Resuming task {payload.task_id} with user feedback. New task ID: {resume_task.id}")
+    return {"task_id": resume_task.id, "message": "Content generation task resumed."}
