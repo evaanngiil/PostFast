@@ -29,6 +29,10 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     print("CRITICAL: DATABASE_URL environment variable not set.")
 
+# Supabase
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
 # Lazy import to avoid circular import
 def get_pro_llm():
     from src.agents.utils.llm_factory import LLMFactory
