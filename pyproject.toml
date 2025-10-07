@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "src"
+name = "AIPost"
 version = "0.3.18"
 description = "social-media-suite"
 authors = ["Evan <evaanngc@gmail.com>"]
@@ -30,6 +30,8 @@ redis = "^5.2.1"
 celery = "^5.5.3"
 python-multipart = "^0.0.20"
 itsdangerous = "^2.2.0"
+supabase = "^2.6.0"
+postgrest = "^2.21.1"
 
 
 [build-system]
