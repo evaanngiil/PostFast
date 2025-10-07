@@ -10,7 +10,6 @@ from src.core.logger import logger
 def render_content_form() -> tuple[str, str, str, str, bool]:
     """Renders the content generation form and returns input values."""
     with st.form("content_generation_form"):
-        st.subheader("1. Define your Publication")
         niche = st.text_input("Niche / Target Audience", help="E.g., 'Software developers interested in AI'")
         tone = st.selectbox("Message Tone", ["Professional", "Informal", "Inspirational", "Funny", "Informative"])
         # Cambiamos el nombre de la variable para que sea más claro
