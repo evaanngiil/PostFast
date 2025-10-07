@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, status
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from langchain_core.messages import HumanMessage
 from src.core.logger import logger
 from src.celery_app import celery_app
@@ -10,6 +10,7 @@ from datetime import datetime, timezone
 import uuid
 from fastapi import APIRouter, Depends
 from src.dependencies.graph import get_graph
+from src.services.api_client import create_post, get_all_posts, get_post_by_id, update_post, delete_post
 
 
 # Importar la dependencia de autenticación
@@ -44,6 +45,37 @@ class ContentGenerationPayload(BaseModel):
 class ResumePayload(BaseModel):
     task_id: str
     feedback: str # El feedback del usuario. Puede ser "aprobar" o un texto.
+
+class PostCreatePayload(BaseModel):
+    content: str
+    status: str
+    platform: str
+    account_id: str
+    scheduled_time: Optional[datetime] = None
+    published_time: Optional[datetime] = None
+    title: Optional[str] = None
+    feedback: Optional[str] = None
+    image_url: Optional[str] = None
+    link_url: Optional[str] = None
+
+class PostUpdatePayload(BaseModel):
+    content: Optional[str] = None
+    status: Optional[str] = None
+    scheduled_time: Optional[datetime] = None
+    published_time: Optional[datetime] = None
+    title: Optional[str] = None
+    feedback: Optional[str] = None
+    image_url: Optional[str] = None
+    link_url: Optional[str] = None
+
+class SaveForLaterPayload(BaseModel):
+    content: str
+    platform: str
+    account_id: str
+    title: Optional[str] = None
+    feedback: Optional[str] = None
+    image_url: Optional[str] = None
+    link_url: Optional[str] = None
 
 
 @content_router.post("/schedule_post")
@@ -83,7 +115,7 @@ async def schedule_post_endpoint(
         payload.content
     ]
     task_kwargs = {
-        "image_url": payload.image_url,
+        # "image_url": payload.image_url,  # Eliminar porque no existe en el modelo
         "link_url": payload.link_url # Pasar link_url a la tarea
         # Añadir otros kwargs que la tarea necesite
     }
@@ -102,14 +134,42 @@ async def schedule_post_endpoint(
                  logger.warning(f"Scheduled time {payload.scheduled_time_str} is in the past. Publishing now.")
                  task = publish_post_task.delay(*task_args, **task_kwargs)
                  msg = "Scheduled time is in the past, publishing task started now."
+                 # Guardar post como publicado
+                 create_post(
+                     content=payload.content,
+                     status="published",
+                     platform=payload.platform,
+                     account_id=payload.account_id,
+                     published_time=datetime.now(timezone.utc),
+                     scheduled_time=scheduled_dt,
+                     link_url=payload.link_url
+                 )
             else:
                 task = publish_post_task.apply_async(args=task_args, kwargs=task_kwargs, eta=scheduled_dt)
                 msg = f"Post scheduled successfully for {scheduled_dt.isoformat()}."
                 logger.info(f"Post scheduling task created. Task ID: {task.id}, ETA: {scheduled_dt}")
+                # Guardar post como programado
+                create_post(
+                    content=payload.content,
+                    status="scheduled",
+                    platform=payload.platform,
+                    account_id=payload.account_id,
+                    scheduled_time=scheduled_dt,
+                    link_url=payload.link_url
+                )
         else: # Publish now
             task = publish_post_task.delay(*task_args, **task_kwargs)
             msg = "Post publication task started now."
             logger.info(f"Post publication task triggered immediately. Task ID: {task.id}")
+            # Guardar post como publicado
+            create_post(
+                content=payload.content,
+                status="published",
+                platform=payload.platform,
+                account_id=payload.account_id,
+                published_time=datetime.now(timezone.utc),
+                link_url=payload.link_url
+            )
 
         return {"task_id": task.id, "message": msg}
 
@@ -246,3 +306,57 @@ async def generate_post_resume(
 
     logger.info(f"Resuming task {payload.task_id} with user feedback. New task ID: {resume_task.id}")
     return {"task_id": resume_task.id, "message": "Content generation task resumed."}
+
+@content_router.post("/posts", response_model=str)
+async def create_post_endpoint(payload: PostCreatePayload, session_data: dict = Depends(get_current_session_data_from_token)):
+    post_id = create_post(**payload.model_dump())
+    return post_id
+
+@content_router.get("/posts", response_model=List[Dict[str, Any]])
+async def list_posts_endpoint(status: Optional[str] = None, session_data: dict = Depends(get_current_session_data_from_token)):
+    return get_all_posts(status=status)
+
+@content_router.get("/posts/{post_id}", response_model=Dict[str, Any])
+async def get_post_endpoint(post_id: str, session_data: dict = Depends(get_current_session_data_from_token)):
+    post = get_post_by_id(post_id)
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return post
+
+@content_router.put("/posts/{post_id}", response_model=bool)
+async def update_post_endpoint(post_id: str, payload: PostUpdatePayload, session_data: dict = Depends(get_current_session_data_from_token)):
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields to update")
+    return update_post(post_id, updates)
+
+@content_router.delete("/posts/{post_id}", response_model=bool)
+async def delete_post_endpoint(post_id: str, session_data: dict = Depends(get_current_session_data_from_token)):
+    return delete_post(post_id)
+
+@content_router.post("/save_for_later", response_model=str)
+async def save_for_later_endpoint(
+    payload: SaveForLaterPayload,
+    session_data: dict = Depends(get_current_session_data_from_token)
+):
+    """
+    Guarda un post para más tarde sin programarlo ni publicarlo.
+    """
+    user_info = session_data.get("user_info", {})
+    logger.info(f"User {user_info.get('id', 'N/A')} saving post for later on {payload.platform}")
+    
+    try:
+        post_id = create_post(
+            content=payload.content,
+            status="saved_for_later",
+            platform=payload.platform,
+            account_id=payload.account_id,
+            title=payload.title,
+            feedback=payload.feedback,
+            image_url=payload.image_url,
+            link_url=payload.link_url
+        )
+        return post_id
+    except Exception as e:
+        logger.exception("Failed to save post for later")
+        raise HTTPException(status_code=500, detail="Failed to save post for later")
