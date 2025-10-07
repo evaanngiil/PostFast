@@ -1,8 +1,10 @@
 import requests
 import streamlit as st
 from src.core.logger import logger
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import datetime
+import uuid
+from src.services.supabase_client import get_supabase
 
 try:
     from src.core.constants import FASTAPI_URL
@@ -47,70 +49,14 @@ def get_api_client() -> requests.Session:
 
 # --- Funciones de la API que usan el cliente ---
 
-def trigger_etl(platform: str, account_id: str, start_date: str, end_date: str) -> Dict[str, Any]:
-    """Triggers the ETL process via the FastAPI backend."""
-    client = get_api_client()
-    etl_endpoint = f"{FASTAPI_URL}/analytics/trigger_etl"
-    payload = {
-        "platform": platform,
-        "account_id": account_id,
-        "start_date": start_date,
-        "end_date": end_date,
-    }
-    logger.info(f"Triggering ETL for Organization URN: {account_id}")
-    
-    # Ya no se pasan los headers explícitamente, el cliente los inyecta.
-    response = client.post(etl_endpoint, json=payload)
-    response.raise_for_status()
-    return response.json()
+
 
 def get_task_status(task_id: str) -> Dict[str, Any]:
-    """Polls the status of a background task."""
-    client = get_api_client()
-    status_endpoint = f"{FASTAPI_URL}/analytics/tasks/status/{task_id}"
-    
-    response = client.get(status_endpoint)
-    if response.status_code != 404:
-        response.raise_for_status()
-        
-    return response.json()
+    """Conservado solo si se usa para otras tareas no analíticas."""
+    # Actualmente no hay endpoint de analytics; devolvemos 404-like structure si se llama.
+    logger.warning("get_task_status llamado pero Analytics ha sido eliminado.")
+    return {"status": "NOT_FOUND", "result": None, "task_id": task_id}
 
-# def generate_content(
-#     tone: str, 
-#     query: str, 
-#     niche: str, 
-#     account_name: str, 
-#     link_url: Optional[str] = None
-# ) -> str:
-#     """Calls the LangGraph backend to generate post content."""
-#     client = get_api_client()
-
-#     logger.warning(f"[AI Client] Generating content for: {query} with tone '{tone}' in niche '{niche}' AND client {client}")
-#     generation_endpoint = f"{FASTAPI_URL}/content/generate_post"
-    
-#     payload = {
-#         "query": query,
-#         "tone": tone, 
-#         "niche": niche,
-#         "account_name": account_name, 
-#         "link_url": link_url
-#     }
-
-#     response = client.post(
-#         generation_endpoint,
-#         json={k: v for k, v in payload.items() if v is not None},
-#         timeout=180
-#     )
-#     response.raise_for_status()
-#     result = response.json()
-    
-#     logger.warning(f"[AI Client] Received response: {result}")
-
-#     # El cliente ahora espera la clave 'final_content' que el backend devuelve
-#     if "final_content" not in result or not result["final_content"]:
-#         raise ValueError("The AI failed to generate content or returned an empty response.")
-
-#     return result["final_content"]
 
 def start_content_generation(
     tone: str, query: str, niche: str, account_name: str, link_url: Optional[str] = None
@@ -168,3 +114,65 @@ def resume_content_generation(task_id: str, feedback: str) -> Dict[str, Any]:
     response.raise_for_status()
 
     return response.json()
+
+# --- CRUD para posts ---
+def create_post(
+    content: str,
+    status: str,
+    platform: str,
+    account_id: str,
+    scheduled_time: Optional[datetime] = None,
+    published_time: Optional[datetime] = None,
+    title: Optional[str] = None,
+    feedback: Optional[str] = None,
+    image_url: Optional[str] = None,
+    link_url: Optional[str] = None
+) -> str:
+    """Crea un nuevo post y lo guarda en Supabase. Devuelve el id."""
+    supabase = get_supabase()
+    post_id = str(uuid.uuid4())
+    payload = {
+        "id": post_id,
+        "content": content,
+        "status": status,
+        "platform": platform,
+        "account_id": account_id,
+        "scheduled_time": scheduled_time,
+        "published_time": published_time,
+        "title": title,
+        "feedback": feedback,
+        "image_url": image_url,
+        "link_url": link_url,
+    }
+    supabase.table("posts").insert({k: v for k, v in payload.items() if v is not None}).execute()
+    return post_id
+
+def get_all_posts(status: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Obtiene todos los posts desde Supabase, opcionalmente filtrando por status."""
+    supabase = get_supabase()
+    query = supabase.table("posts").select("*").order("created_at", desc=True)
+    if status:
+        query = query.eq("status", status)
+    result = query.execute()
+    return result.data or []
+
+def get_post_by_id(post_id: str) -> Optional[Dict[str, Any]]:
+    supabase = get_supabase()
+    result = supabase.table("posts").select("*").eq("id", post_id).single().execute()
+    return result.data if result.data else None
+
+def update_post(post_id: str, updates: Dict[str, Any]) -> bool:
+    """Actualiza los campos de un post dado su id. updates es un dict con los campos a actualizar."""
+    if not updates:
+        return False
+    supabase = get_supabase()
+    clean_updates = {k: v for k, v in updates.items() if v is not None}
+    if not clean_updates:
+        return False
+    result = supabase.table("posts").update(clean_updates).eq("id", post_id).execute()
+    return bool(result.data)
+
+def delete_post(post_id: str) -> bool:
+    supabase = get_supabase()
+    result = supabase.table("posts").delete().eq("id", post_id).execute()
+    return bool(result.data)
