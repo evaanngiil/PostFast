@@ -3,14 +3,13 @@ import streamlit as st
 import requests
 import json
 import base64
-import psycopg
-from psycopg.rows import dict_row
 from datetime import datetime, timezone
 from urllib.parse import unquote_plus
 from requests_oauthlib import OAuth2Session
 from typing import Optional # Para Optional Header
 from streamlit.components.v1 import html
-from src.data_processing import get_db_connection
+## Eliminado psycopg y conexiones locales; todo pasa por Supabase
+from src.services.supabase_client import get_supabase
 
 try: 
     from src.core.constants import FASTAPI_URL, DATABASE_URL
@@ -39,49 +38,27 @@ except ImportError:
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False) # auto_error=False para manejar 401 manualmente
 
 def get_db_connection():
-    """Obtiene una conexión síncrona a PostgreSQL."""
-    if not DATABASE_URL:
-        logger.error("DATABASE_URL is not configured.")
-        return None
-    try:
-        # Usar conexión síncrona
-        conn = psycopg.connect(DATABASE_URL, row_factory=dict_row)
-        logger.debug("PostgreSQL sync connection opened (from auth.py).")
-        return conn
-    except psycopg.Error as e:
-        logger.error(f"Failed to connect sync to PostgreSQL DB (from auth.py): {e}", exc_info=True)
-        return None
-    except Exception as e:
-        logger.error(f"Unexpected error connecting sync to PostgreSQL (from auth.py): {e}", exc_info=True)
-        return None
+    """Deprecado tras migración a Supabase."""
+    logger.warning("get_db_connection is deprecated in auth.py (using Supabase).")
+    return None
 
 
 def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
     """
-    Dependency (sync): Valida Bearer token, comprueba expiración, devuelve datos.
-    Usa psycopg síncrono y maneja resultados dict_row.
+    Dependency (sync): Valida Bearer token, comprueba expiración, devuelve datos (vía Supabase).
     """
     if token is None:
         logger.warning("[Dependency] Auth required: No token provided.")
         raise HTTPException(status_code=401, detail="Not authenticated", headers={"WWW-Authenticate": "Bearer"})
 
-    conn = None
-    cur = None
+
     try:
-        conn = get_db_connection() # Obtener conexión síncrona
-        if not conn:
-            logger.error("[Dependency] DB connection failed.")
-            raise HTTPException(status_code=503, detail="Database service unavailable")
-
-        cur = conn.cursor() # Crear cursor síncrono
-
-        # Usar placeholders %s
-        cur.execute("""
-            SELECT provider, user_provider_id, access_token, refresh_token,
-                   token_type, expires_at, user_info, session_cookie_id
-            FROM user_sessions WHERE access_token = %s
-        """, (token,))
-        result = cur.fetchone() # fetchone() devuelve dict o None
+        # Validar sesión contra Supabase
+        supabase = get_supabase()
+        resp = supabase.table("user_sessions").select(
+            "provider, user_provider_id, access_token, refresh_token, token_type, expires_at, user_info, session_cookie_id"
+        ).eq("access_token", token).single().execute()
+        result = resp.data if hasattr(resp, 'data') else None
 
         if not result:
             logger.warning(f"[Dependency] Token validation failed: Token '{token[:5]}...' not found in DB.")
@@ -97,10 +74,20 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
         if expires_at_db:
             expires_at_aware = None
             if isinstance(expires_at_db, datetime):
-                if expires_at_db.tzinfo is None: expires_at_aware = expires_at_db.replace(tzinfo=timezone.utc)
-                else: expires_at_aware = expires_at_db
-            else: logger.warning(f"[Dependency] expires_at is not datetime: {expires_at_db}")
-            if expires_at_aware and datetime.now(timezone.utc) > expires_at_aware: token_expired = True
+                expires_at_aware = expires_at_db if expires_at_db.tzinfo else expires_at_db.replace(tzinfo=timezone.utc)
+            elif isinstance(expires_at_db, str):
+                try:
+                    # Normalizar Z a +00:00
+                    normalized = expires_at_db.replace('Z', '+00:00')
+                    expires_at_aware = datetime.fromisoformat(normalized)
+                    if expires_at_aware.tzinfo is None:
+                        expires_at_aware = expires_at_aware.replace(tzinfo=timezone.utc)
+                except Exception:
+                    logger.warning(f"[Dependency] Could not parse expires_at string: {expires_at_db}")
+            else:
+                logger.warning(f"[Dependency] expires_at has unexpected type: {type(expires_at_db)}")
+            if expires_at_aware and datetime.now(timezone.utc) > expires_at_aware:
+                token_expired = True
         # ---
 
         if token_expired:
@@ -121,11 +108,11 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
         user_info_out = user_info_db if isinstance(user_info_db, dict) else {}
         # Intentar decodificar solo si NO es un dict (por si acaso)
         if not isinstance(user_info_db, dict) and user_info_db is not None:
-             try:
-                 user_info_out = json.loads(user_info_db)
-             except (json.JSONDecodeError, TypeError) as json_err:
-                 logger.warning(f"[Dependency] Could not decode user_info from DB: {json_err}. DB value: {user_info_db}")
-                 user_info_out = {}
+            try:
+                user_info_out = json.loads(user_info_db)
+            except (json.JSONDecodeError, TypeError) as json_err:
+                logger.warning(f"[Dependency] Could not decode user_info from DB: {json_err}. DB value: {user_info_db}")
+                user_info_out = {}
 
 
         session_data = {
@@ -145,26 +132,12 @@ def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_sc
         return session_data
 
     except HTTPException as http_exc:
-        if conn: 
-            conn.rollback() # Deshacer transacción en errores HTTP
         raise http_exc
-    except psycopg.Error as db_err:
-        logger.exception(f"[Dependency] PostgreSQL error verifying token: {db_err}")
-        if conn: 
-            conn.rollback()
-        raise HTTPException(status_code=503, detail="Database error during authentication")
     except Exception as e:
         logger.exception(f"[Dependency] Unexpected error verifying token: {e}")
-        if conn: 
-            conn.rollback()
         raise HTTPException(status_code=500, detail="Internal server error")
     finally:
-         # Cerrar cursor y conexión síncronos
-         if cur: 
-            cur.close()
-         if conn: 
-            conn.close()
-         logger.debug("[Dependency] PostgreSQL sync connection closed.")
+         logger.debug("[Dependency] Validation finished (Supabase).")
 
 # --- Funciones de inicialización y verificación --
 def initialize_session_state():
