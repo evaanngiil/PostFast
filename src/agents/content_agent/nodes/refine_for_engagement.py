@@ -19,12 +19,24 @@ async def refine_for_engagement(state: InternalState, config: RunnableConfig) ->
     state['revision_cycles'] = revision_cycles
     print(f"--- Ciclo de revisión #{state['revision_cycles']} ---")
 
+    # Validar que tenemos contenido para refinar
     if state.get("refined_content") and revision_cycles > 1:
         print(f"Usando contenido refinado de la revisión anterior. Revisión #{revision_cycles}")
-        content_to_refine = state["refined_content"]
+        content_to_refine = state.get("refined_content", "")
     else:
         print("Usando borrador original para la primera revisión.")
-        content_to_refine = state["draft_content"]
+        content_to_refine = state.get("draft_content", "")
+    
+    # Si no hay contenido para refinar, usar el contenido final como fallback
+    if not content_to_refine:
+        content_to_refine = state.get("final_post", "")
+    
+    # Si aún no hay contenido, crear un mensaje de error
+    if not content_to_refine:
+        error_msg = "Error: No se encontró contenido para refinar. El estado del grafo está incompleto."
+        print(f"[ERROR] {error_msg}")
+        state['refined_content'] = error_msg
+        return state
 
     prompt = ChatPromptTemplate.from_template(
         """Eres un especialista en engagement. Tu tarea principal es aplicar las correcciones solicitadas por el usuario.
@@ -53,7 +65,7 @@ async def refine_for_engagement(state: InternalState, config: RunnableConfig) ->
     
     state['refined_content'] = str(refined.content)
     
-    print(f"[DEBUG] Nodo refine_for_engagement - Estado del feedback: {state.get("human_feedback")}")
+    print(f"[DEBUG] Nodo refine_for_engagement - Estado del feedback: {state.get('human_feedback')}")
 
     state['human_feedback'] = None
 
