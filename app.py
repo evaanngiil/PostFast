@@ -1,5 +1,3 @@
-# app.py
-
 import streamlit as st
 
 # --- Core Imports and Setup ---
@@ -25,7 +23,7 @@ except ImportError as e:
 try:
     from src.components.sidebar import render_sidebar
     from src.utils.context import get_selected_account_context
-    from src.pages import analytics, content_generation
+    from src.pages import content_generation, posts_management
 except ImportError as e:
     st.error(f"Fatal Import Error (app structure): {e}"); logger.critical(f"Import Error (app structure): {e}", exc_info=True); st.stop()
 
@@ -69,10 +67,10 @@ def main():
     active_context = get_selected_account_context(selected_account_data)
 
     # --- Page Routing ---
-    if selected_tab == "Analytics":
-        analytics.render_page(active_context)
-    elif selected_tab == "Content Generation":
+    if selected_tab == "Content Generation":
         content_generation.render_page(active_context)
+    elif selected_tab == "Posts Management":
+        posts_management.render_page(active_context)
     
     # --- Footer ---
     st.sidebar.divider()
