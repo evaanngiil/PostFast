@@ -26,7 +26,7 @@ def render_sidebar() -> Tuple[str, Dict[str, Any] | None]:
         
         selected_tab = st.radio(
             "Navigation", 
-            ["Analytics", "Content Generation"], 
+            ["Content Generation", "Posts Management"], 
             key="main_nav"
         )
         
