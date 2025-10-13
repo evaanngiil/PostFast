@@ -20,7 +20,7 @@ def _get_current_token() -> Optional[str]:
     # Buscamos el token de la plataforma conectada actualmente.
     # Asumimos una lógica simple donde solo hay una plataforma a la vez.
     if st.session_state.get("li_connected"):
-        return st.session_state.get("li_token_data", {}).get("access_token")
+        return (st.session_state.get("li_token_data") or {}).get("access_token")
     # elif st.session_state.get("fb_connected"):
     #     return st.session_state.get("fb_token_data", {}).get("access_token")
     return None
