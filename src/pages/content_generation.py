@@ -192,10 +192,15 @@ def render_publish_ui(final_post: str, final_link_url: str, account_name: str, p
 
 
 def render_page(active_context: Dict[str, Any]):
+    if not active_context:
+        st.error("Error interno: Se intentó renderizar la página sin un contexto de cuenta activo.")
+        return
+
     st.title("✍️ Generación de Contenido")
     account_name = active_context.get("name", "Cuenta desconocida")
     platform = active_context.get("platform", "Plataforma desconocida")
     account_id = str(active_context.get("account_id", ""))
+
     if 'generation_task_id' in st.session_state and st.session_state.generation_task_id:
         render_stepper(0, ["Generando", "Revisión", "Publicación"])
         task_id = st.session_state.generation_task_id

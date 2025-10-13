@@ -1,5 +1,6 @@
 import streamlit as st
 from typing import List, Optional
+from PIL import Image
 
 def render_stepper(current_step: int, steps: List[str]):
     """Muestra un stepper visual horizontal para indicar el progreso del usuario."""
@@ -33,3 +34,15 @@ def render_feedback_box(message: str, type_: str = "info"):
         st.error(message)
     else:
         st.write(message) 
+
+def set_page_config(title: str):
+    """Configura los parámetros básicos de la página Streamlit."""
+    icon = Image.open("./src/assets/AIPOST.jpg")
+
+    st.set_page_config(
+        page_title=title,
+        page_icon=icon,
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
