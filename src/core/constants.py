@@ -11,7 +11,15 @@ LI_CLIENT_ID = os.getenv("LI_CLIENT_ID")
 LI_CLIENT_SECRET = os.getenv("LI_CLIENT_SECRET")
 
 BASE_URL = os.getenv("BASE_URL")
+if not BASE_URL:
+    # Default to local Streamlit dev server when not configured
+    BASE_URL = "http://localhost:8501"
+    print("WARNING: BASE_URL not set in environment. Defaulting to http://localhost:8501 (dev only).")
+
 FASTAPI_URL = os.getenv("FASTAPI_URL")
+if not FASTAPI_URL:
+    FASTAPI_URL = "http://localhost:8000"
+    print("WARNING: FASTAPI_URL not set in environment. Defaulting to http://localhost:8000 (dev only).")
 
 LI_REDIRECT_URI = f"{FASTAPI_URL}/auth/callback/linkedin"
 X_REDIRECT_URI = f"{FASTAPI_URL}/auth/callback/x"
