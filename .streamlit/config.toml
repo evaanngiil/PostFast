@@ -1,0 +1,23 @@
+
+[theme]
+# El color principal para elementos interactivos.
+primaryColor = "#00A99D"  # Un turquesa vibrante similar al de tu logo
+
+# Color de fondo principal de la aplicación.
+backgroundColor = "#F0F2F6"
+
+# Color de fondo para elementos como la barra lateral.
+secondaryBackgroundColor = "#FFFFFF"
+
+# Color del texto principal.
+textColor = "#1E1E1E"
+
+# Fuente a utilizar. 'sans serif' es una opción segura y moderna.
+font = "sans serif"
+
+[server]
+# Permite que el servidor se ejecute en segundo plano.
+runOnSave = true
+
+[client]
+showSidebarNavigation = false
