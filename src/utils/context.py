@@ -27,7 +27,7 @@ def get_selected_account_context(selected_account_data: Dict[str, Any] | None) -
     })
 
     if context["platform"] == "LinkedIn":
-        context["token"] = st.session_state.get("li_token_data", {}).get("access_token")
+        context["token"] = (st.session_state.get("li_token_data") or {}).get("access_token")
 
     # Log validation result for debugging
     is_valid = all([context["platform"], context["account_id"], context["account_type"], context["token"]])
