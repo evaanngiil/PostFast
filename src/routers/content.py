@@ -16,7 +16,7 @@ from src.services.api_client import create_post, get_all_posts, get_post_by_id, 
 # Importar la dependencia de autenticación
 try:
      # Asumiendo que está en main.py en el directorio superior
-     from src.auth import get_current_session_data_from_token
+     from src.linkedin_auth import get_current_session_data_from_token
 except ImportError:
      # Fallback o error si la estructura es diferente
      logger.critical("Could not import get_current_session_data_from_token dependency!")
