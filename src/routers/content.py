@@ -1,7 +1,6 @@
-from fastapi import APIRouter, HTTPException, Depends, Request, status
+from fastapi import APIRouter, HTTPException, Depends, status
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
-from langchain_core.messages import HumanMessage
 from src.core.logger import logger
 from src.celery_app import celery_app
 from src.tasks import publish_post_task, content_generation_task, resume_content_generation_task
@@ -16,7 +15,7 @@ from src.services.api_client import create_post, get_all_posts, get_post_by_id, 
 # Importar la dependencia de autenticación
 try:
      # Asumiendo que está en main.py en el directorio superior
-     from src.linkedin_auth import get_current_session_data_from_token
+     from src.dependencies.auth import get_current_session_data_from_token
 except ImportError:
      # Fallback o error si la estructura es diferente
      logger.critical("Could not import get_current_session_data_from_token dependency!")

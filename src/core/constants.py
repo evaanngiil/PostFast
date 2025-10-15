@@ -30,7 +30,6 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
 SECRET_KEY = os.getenv("SECRET_KEY")
 
 # API Constants 
-# LI_API_URL = "https://api.linkedin.com/rest"
 LI_API_URL = "https://api.linkedin.com/v2"
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -40,6 +39,11 @@ if not DATABASE_URL:
 # Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Redis
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = os.getenv("REDIS_PORT")
+
 
 # Lazy import to avoid circular import
 def get_pro_llm():
