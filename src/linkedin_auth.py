@@ -2,10 +2,10 @@ import streamlit as st
 import requests
 import json
 import base64
-from datetime import datetime, timezone
-from typing import Optional
 import requests.sessions
 from urllib.parse import unquote_plus
+from streamlit_cookies_controller import CookieController
+
 from src.services.supabase_client import get_supabase
 from src.supabase_auth import (
     revalidate_aipost_session,
@@ -14,7 +14,7 @@ from src.supabase_auth import (
 )
 
 try:
-    from src.core.constants import FASTAPI_URL
+    from src.core.constants import FASTAPI_URL, SECRET_KEY
 except ImportError:
     FASTAPI_URL = "http://localhost:8000"
 
@@ -24,70 +24,28 @@ except ImportError:
     import logging; logger = logging.getLogger(__name__); logger.warning("Using basic logger.")
 
 try:
-    from fastapi import Depends, HTTPException
-    from fastapi.security import OAuth2PasswordBearer
-except Exception:
-    def Depends(x=None): return x
-    class HTTPException(Exception): pass
-    class OAuth2PasswordBearer: pass
-try:
-    from streamlit.components.v1 import html as components_html
-except Exception:
-    def components_html(content, height=0): pass
-
-try:
-    from src.social_apis import get_linkedin_organizations, get_linkedin_user_info
+    from src.social_apis import get_linkedin_organizations
 except ImportError:
     logger.error("Dummy social API funcs used.")
     def get_linkedin_organizations(token): return []
-    def get_linkedin_user_info(token): return {'sub': 'dummy_user_sub', 'name': 'Dummy User', 'email': 'dummy@example.com'}
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
-
+cookies = CookieController(key=SECRET_KEY)
 
 # ----------------- INICIALIZADORES / HELPERS -----------------
 
-def get_current_session_data_from_token(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
-    if token is None:
-        raise HTTPException(status_code=401, detail="Not authenticated")
+def initialize_session_state():
+    """Inicializa el session_state con valores por defecto si no existen."""
+    defaults = {
+        'aipost_logged_in': False, 'user': None, 'aipost_session_revalidated': False,
+        'li_connected': False, 'li_user_info': None, 'li_token_data': None,
+        'user_accounts': {}, 'LinkedIn_accounts_loaded_flag': False,
+        'session_verified': False, 'auth_error': None, 'selected_account': None,
+        'auth_token_for_url': None
+    }
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-    try:
-        supabase = get_supabase()
-        resp = supabase.table("user_sessions").select("*").eq("access_token", token).single().execute()
-        result = resp.data
-        if not result:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
-
-        expires_at_db = result.get('expires_at')
-        token_expired = False
-        if expires_at_db:
-            expires_at_aware = datetime.fromisoformat(expires_at_db.replace('Z', '+00:00'))
-            if datetime.now(timezone.utc) > expires_at_aware:
-                token_expired = True
-        
-        if token_expired:
-            raise HTTPException(status_code=401, detail="Token expired")
-
-        user_info_out = result.get('user_info') if isinstance(result.get('user_info'), dict) else {}
-
-        return {
-            "authenticated": True, "provider": result.get('provider'), "user_info": user_info_out,
-            "user_provider_id": result.get('user_provider_id'),
-            "session_cookie_id": result.get('session_cookie_id'),
-            "token_data": {
-                "access_token": result.get('access_token'), "refresh_token": result.get('refresh_token'),
-                "token_type": result.get('token_type'), "expires_at": expires_at_db
-            }
-        }
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        logger.exception(f"[Dependency] Unexpected error verifying token: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
-
-def _validate_platform_session():
-    return is_aipost_logged_in()
 
 def ensure_session_initialized(force=False):
     """Inicializa y valida la sesión en el orden correcto."""
@@ -95,25 +53,13 @@ def ensure_session_initialized(force=False):
     if not st.session_state.get('session_revalidated', False) or force:
         revalidate_aipost_session()
 
-    # process_auth_params se encargará de hacer switch_page si tiene éxito
     if not process_auth_params():
         # Si no se procesaron parámetros, intentar verificar una sesión existente
         verify_session_on_load()
 
     if st.session_state.get('li_connected') and not st.session_state.get('LinkedIn_accounts_loaded_flag'):
-        load_user_accounts('LinkedIn')
+        load_user_accounts()
     return True
-
-def initialize_session_state():
-    """Debe ser llamada al principio de cada script de página."""
-    defaults = {
-        'aipost_logged_in': False, 'user': None, 'session_revalidated': False,
-        'li_connected': False, 'li_user_info': None, 'li_token_data': None,
-        'user_accounts': {}, 'LinkedIn_accounts_loaded_flag': False,
-        'session_verified': False, 'auth_error': None, 'selected_account': None
-    }
-    for k, v in defaults.items():
-        if k not in st.session_state: st.session_state[k] = v
 
 
 def verify_session_on_load() -> bool:
@@ -165,176 +111,239 @@ def verify_session_on_load() -> bool:
 
     return False
 
-
 def process_auth_params() -> bool:
     """
-    Procesa los parámetros de la URL. Devuelve True si se procesó algo.
-    Se encarga de limpiar la URL y hacer switch_page en caso de éxito.
+    Procesa los parámetros de la URL DESPUÉS del callback de OAuth.
+    Devuelve True si se procesaron parámetros, para que ensure_auth se detenga.
     """
     query_params = st.query_params
-    logger.debug(f"[process_auth_params] raw query_params: {dict(query_params)}")
-
     auth_provider = query_params.get("auth_provider")
-    auth_error = query_params.get("auth_error")
 
-    if not auth_provider and not auth_error:
-        return False
+    if not auth_provider:
+        return False # No hay nada que procesar
 
-    if auth_error:
-        st.session_state.auth_error = f"Error de autenticación: {auth_error}"
-        try: 
-            st.query_params.clear()
-        except Exception: 
-            pass
-        return True
-
+    logger.debug(f"Processing auth params from URL for provider: {auth_provider}")
+    
+    # Extraemos todos los datos de la URL
     auth_token_encoded = query_params.get("auth_token")
     user_info_b64 = query_params.get("user_info")
     create_platform_session = query_params.get("create_platform_session")
+    auth_error = query_params.get("auth_error")
 
-    logger.debug(f"[process_auth_params] provider={auth_provider} token_present={bool(auth_token_encoded)} create_platform_session={create_platform_session}")
+    # Siempre limpiamos los parámetros para evitar bucles
+    try:
+        st.query_params.clear()
+    except Exception:
+        pass
+    
+    # Manejo de errores desde el backend
+    if auth_error:
+        st.session_state.auth_error = f"Error de autenticación: {auth_error}"
+        st.rerun()
+        return True
 
-    if auth_provider and auth_token_encoded:
+    # Si tenemos un proveedor y un token, procesamos el login
+    if auth_provider == "linkedin" and auth_token_encoded:
         try:
+            # 1. Decodificar y guardar los datos de LinkedIn en session_state
             access_token = unquote_plus(auth_token_encoded)
-            token_data = {"access_token": access_token}
-
-            st.session_state.li_token_data = token_data
-            logger.info("[process_auth_params] Stored li_token_data into session_state")
-
-            user_info = {}
-            if user_info_b64:
-                logger.debug(f"[process_auth_params] user_info_b64 preview: {str(user_info_b64)[:120]} (len={len(user_info_b64)})")
-                
-                def _decode_b64_str(s: str):
-                    if isinstance(s, str): 
-                        s_bytes = s.encode()
-                    else: 
-                        s_bytes = s
-                        
-                    padding = b"=" * (-len(s_bytes) % 4)
-                    try: 
-                        return base64.urlsafe_b64decode(s_bytes + padding).decode()
-                    except Exception: 
-                        return base64.b64decode(s_bytes + padding).decode()
-
-                try:
-                    s = user_info_b64
-                    if isinstance(s, str) and (s.lstrip().startswith('{') or s.lstrip().startswith('[') or s.startswith('%7B')):
-                        try: 
-                            user_info = json.loads(unquote_plus(s))
-                        except Exception: 
-                            user_info = json.loads(s)
-                    else:
-                        try:
-                            user_info = json.loads(_decode_b64_str(s))
-                        except Exception:
-                            try: 
-                                user_info = json.loads(_decode_b64_str(unquote_plus(s)))
-                            except Exception:
-                                logger.exception("[process_auth_params] Failed decoding user_info; continuing with empty user_info")
-                                user_info = {}
-                except Exception:
-                    logger.exception("[process_auth_params] Unexpected error while parsing user_info")
-                    user_info = {}
-
+            st.session_state.li_token_data = {"access_token": access_token}
+            
+            user_info_json = base64.urlsafe_b64decode(user_info_b64.encode() + b'==').decode()
+            user_info = json.loads(user_info_json)
             st.session_state.li_user_info = user_info
-            logger.info("[process_auth_params] Stored li_user_info into session_state")
+            
+            # 2. MARCAR SIEMPRE COMO CONECTADO A LINKEDIN
+            st.session_state.li_connected = True
+            st.session_state.session_verified = True
+            logger.info("LinkedIn session established from URL params.")
 
-            if auth_provider == "linkedin":
-                if create_platform_session == "true":
-                    email = user_info.get('email')
-                    name = user_info.get('name', 'Usuario LinkedIn')
-                    if email:
-                        mock_user = type('MockUser', (), {'email': email, 'name': name, 'user_metadata': {'name': name, 'email': email}})()
-                        mark_aipost_logged_in(mock_user)
-                    else:
-                        st.session_state.auth_error = "No se pudo obtener el email de LinkedIn."
-                        try: 
-                            st.query_params.clear()
-                        except Exception: 
-                            pass
-                        return True
-                elif not is_aipost_logged_in():
-                    st.session_state.auth_error = "Debes iniciar sesión en AIPost primero."
-                    try: 
-                        st.query_params.clear()
-                    except Exception: 
-                        pass
-                    return True
+            # 3. Lógica específica para la sesión de la plataforma (AIPost)
+            if create_platform_session == "true":
+                # Si venimos del botón "Iniciar Sesión con LinkedIn", creamos/validamos la sesión de AIPost
+                email = user_info.get('email')
+                name = user_info.get('name', 'Usuario LinkedIn')
+                if email:
+                    # Simula la creación de un objeto User para marcar el login en AIPost
+                    mock_user = type('MockUser', (), {
+                        'email': email, 'name': name,
+                        'user_metadata': {'name': name, 'email': email}
+                    })()
+                    mark_aipost_logged_in(mock_user)
+                    logger.info(f"AIPost platform session created/validated for {email}")
+                else:
+                    st.session_state.auth_error = "No se pudo obtener el email de LinkedIn para iniciar sesión."
+            elif not is_aipost_logged_in():
+                # Si intentan conectar LinkedIn sin tener una sesión de AIPost, mostramos error
+                st.session_state.auth_error = "Debes iniciar sesión en AIPost antes de conectar tu cuenta de LinkedIn."
+                st.session_state.li_connected = False # Revertimos la conexión
 
-                # --- marcar conectado antes de cambiar de página ---
-                st.session_state.li_connected = True
-                st.session_state.session_verified = True
-                logger.info("LinkedIn session established in session_state. Switching to Dashboard.")
-
-                try: 
-                    st.query_params.clear()
-                except Exception: 
-                    pass
-                
-                try: 
-                    st.switch_page("pages/01_Dashboard.py")
-                except Exception: 
-                    st.rerun()
-
-        except Exception:
-            logger.exception("Error processing auth params from URL.")
+            # 4. Redirigir al Dashboard
+            st.switch_page("pages/Dashboard.py")
+            
+        except Exception as e:
             st.session_state.auth_error = "Error procesando datos de autenticación."
-            try: st.query_params.clear()
-            except Exception: pass
-            return True
+            logger.exception(f"Failed to process auth params: {e}")
+            st.rerun() # Hacemos rerun para mostrar el error
 
-    return True
+    return True # Indicamos que se procesaron parámetros
 
+# ----------------- FUNCIONES PRINCIPALES -----------------
+def load_user_accounts():
+    """Carga las cuentas de usuario (perfil, páginas) para LinkedIn."""
+    
+    if st.session_state.get('LinkedIn_accounts_loaded_flag') or not st.session_state.get("li_connected"):
+        return
 
-def load_user_accounts(platform: str) -> bool:
-    if platform != "LinkedIn" or st.session_state.get(f"{platform}_accounts_loaded_flag"):
-        return False
-
-    is_connected = st.session_state.get("li_connected", False)
-    token_dict = st.session_state.get("li_token_data")
-    user_info = st.session_state.get("li_user_info")
-
-    if not (is_connected and token_dict and user_info):
-        return False
-
-    user_access_token = token_dict.get("access_token")
+    token = st.session_state.get('auth_token_for_url')
+    user_info = st.session_state.get("li_user_info", {})
     user_profile_id = user_info.get("sub")
-    if not user_access_token or not user_profile_id:
-        return False
 
-    logger.info(f"Loading accounts for {platform}...")
-    accounts_list = []
-    person_urn = f"urn:li:person:{user_profile_id}"
-    accounts_list.append({
-        "id": person_urn, "urn": person_urn, "name": user_info.get("name", "Your Profile"),
-        "platform": "LinkedIn", "type": "profile", "logo": {"picture": user_info.get("picture")}
-    })
+    if not token or not user_profile_id:
+        return
+
+    logger.info("Loading LinkedIn accounts...")
+    accounts_list = [
+        {
+            "id": f"urn:li:person:{user_profile_id}",
+            "urn": f"urn:li:person:{user_profile_id}",
+            "name": user_info.get("name", "Tu Perfil"),
+            "platform": "LinkedIn",
+            "type": "profile",
+            "logo": {"picture": user_info.get("picture")}
+        }
+    ]
 
     try:
-        managed_organizations = get_linkedin_organizations(user_access_token)
-        if isinstance(managed_organizations, list):
-            accounts_list.extend(managed_organizations)
+        managed_orgs = get_linkedin_organizations(token)
+        if isinstance(managed_orgs, list):
+            accounts_list.extend(managed_orgs)
     except Exception as e:
         logger.exception(f"Failed loading LinkedIn organizations: {e}")
-        st.error(f"Error cargando organizaciones de LinkedIn: {e}")
 
-    st.session_state.user_accounts[platform] = accounts_list
-    if st.session_state.get("selected_account") is None and accounts_list:
+    st.session_state.user_accounts = accounts_list
+    if not st.session_state.get("selected_account") and accounts_list:
         st.session_state.selected_account = accounts_list[0]
-    
-    st.session_state[f"{platform}_accounts_loaded_flag"] = True
-    return True
+        
+    st.session_state.LinkedIn_accounts_loaded_flag = True
+    logger.info(f"Loaded {len(accounts_list)} LinkedIn accounts.")
 
+
+def _restore_session_from_api(token: str) -> bool:
+    """Usa un token para llamar a /auth/me y repoblar st.session_state."""
+    if not token: return False
+        
+    logger.debug("Attempting to restore session from API via /auth/me")
+    auth_status_url = f"{FASTAPI_URL}/auth/me"
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    try:
+        resp = requests.get(auth_status_url, headers=headers, timeout=10)
+        if resp.ok:
+            auth_data = resp.json()
+            if auth_data.get("authenticated"):
+                provider = auth_data.get("provider")
+                user_info = auth_data.get("user_info", {})
+                
+                # Poblar estado de la plataforma AIPost
+                st.session_state.aipost_logged_in = True
+                user_data_for_mock = {'user_metadata': user_info, 'email': user_info.get('email'), 'name': user_info.get('name')}
+                st.session_state.user = type('MockUser', (), user_data_for_mock)()
+                
+                # Guardar el token para la navegación futura
+                st.session_state.auth_token_for_url = token
+
+                if provider == "linkedin":
+                    st.session_state.li_user_info = user_info
+                    st.session_state.li_connected = True
+                
+                st.session_state.session_verified = True
+                logger.info(f"✅ Session restored from API for provider: {provider}")
+                return True
+        else:
+            logger.warning(f"API rejected token. Status: {resp.status_code}")
+            st.session_state.auth_error = "Tu sesión ha expirado o es inválida."
+            
+    except Exception as e:
+        logger.error(f"Error during API session restoration: {e}")
+        st.session_state.auth_error = "Error de conexión al verificar la sesión."
+
+    # Limpiar estado si la restauración falla
+    st.session_state.li_connected = False
+    st.session_state.aipost_logged_in = False
+    st.session_state.auth_token_for_url = None
+    return False
+
+
+def ensure_auth(protect_route: bool = True):
+    """
+    Función central de autenticación. Debe ser llamada al inicio de CADA página.
+    """
+    # initialize_session_state()
+
+    # 1. Si la sesión ya está verificada en esta ejecución, no hacemos nada más.
+    if st.session_state.get('session_verified'):
+        return
+
+    # 2. Revalidar la sesión de Supabase si existe (sincroniza el estado local de Supabase)
+    revalidate_aipost_session()
+
+    # 3. Intentar restaurar la sesión usando un token, ya sea de la URL o del estado de sesión.
+    token = st.query_params.get("auth_token") or st.session_state.get('auth_token_for_url')
+    logger.debug(f"[ensure_auth] auth_token from URL or session_state: {'PRESENT' if token else 'NOT PRESENT'}")
+
+    if  token is not None:
+        cookies.set("linkedin_access_token", token, max_age=3600 * 24 * 7)
+        logger.debug(f"Guardado token de LinkedIn en cookies para persistencia. {cookies.getAll()}")
+    else:
+        token = cookies.get("linkedin_access_token")
+        if token:
+            st.session_state.li_token_data = {"access_token": token}
+            st.session_state.auth_token_for_url = token
+            logger.debug("[ensure_auth] auth_token recovered from cookies and stored in session_state")
+    
+    if token:
+        logger.debug(f"[ensure_auth] TOKEN: {token}")
+        if _restore_session_from_api(token):
+            # Limpiamos el token de la URL para tener una URL más limpia
+            if "auth_token" in st.query_params:
+                st.query_params.clear()
+            # Si la restauración fue exitosa, cargamos las cuentas y terminamos.
+            load_user_accounts()
+            return
+
+    # 4. Procesar el callback de OAuth de LinkedIn (solo ocurre una vez después del login)
+    # Esto es para el flujo de conexión inicial con LinkedIn.
+    if "auth_provider" in st.query_params and st.query_params.get("auth_provider") == "linkedin":
+        token_from_url = st.query_params.get("auth_token")
+        if token_from_url:
+            st.session_state.auth_token_for_url = token_from_url
+            st.query_params.clear() # Limpiamos para evitar bucles
+            # Forzamos un rerun para que el flujo de restauración de arriba se active con el nuevo token
+            st.rerun()
+
+    # 5. Lógica de protección de ruta.
+    # Si después de todos los intentos, el usuario no está logueado y la ruta está protegida,
+    # lo enviamos a la página de login.
+    if protect_route and not st.session_state.get('aipost_logged_in'):
+        st.warning("Debes iniciar sesión para acceder a esta página.")
+        st.switch_page("app.py")
+        st.stop()
+
+
+
+# ----------------- FUNCIONES UI AUXILIARES -----------------
 def display_auth_status(sidebar: bool = True):
     container = st.sidebar if sidebar else st
     if not is_aipost_logged_in():
         container.info("Inicia sesión en AIPost para conectar redes sociales.")
         return
 
-    logger.warning(f"[auth-status] Displaying auth status... {st.session_state}")
+    logger.warning(f"[auth-status] Displaying auth status UI Sidebar{st.session_state}")
+
     if st.session_state.get("li_connected"):
+        logger.debug("HAY CONEXIÓN A LINKEDIN - mostrando estado en sidebar")
+        
         user_info = st.session_state.get("li_user_info")
         display_name, profile_pic_url = "Usuario LinkedIn", None
         if isinstance(user_info, dict):
@@ -343,8 +352,11 @@ def display_auth_status(sidebar: bool = True):
         
         col_img, col_info = container.columns([1, 4])
         with col_img:
-            if profile_pic_url: st.image(profile_pic_url, width=45)
-            else: st.markdown("👤", unsafe_allow_html=True)
+            if profile_pic_url: 
+                st.image(profile_pic_url, width=45)
+            else: 
+                st.markdown("👤", unsafe_allow_html=True)
+                
         with col_info:
             st.markdown(f"**{display_name}**")
             st.caption("Conectado a LinkedIn")
@@ -374,7 +386,7 @@ def display_account_selector(sidebar: bool = True):
         container.info("Conecta LinkedIn para seleccionar una cuenta.")
         return None
 
-    linkedin_accounts = (st.session_state.get("user_accounts") or {}).get("LinkedIn", [])
+    linkedin_accounts = (st.session_state.get("user_accounts") or {})
     if not linkedin_accounts:
         container.warning("No se encontraron perfiles de LinkedIn.")
         return None
