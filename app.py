@@ -3,14 +3,29 @@ import base64
 
 # --- Core Imports ---
 try:
-    from src.supabase_auth import login, signup, revalidate_aipost_session, initialize_aipost_session, is_aipost_logged_in
-    from src.linkedin_auth import process_auth_params, initialize_session_state
+    from src.supabase_auth import login, signup
+    from src.linkedin_auth import ensure_auth
     from src.components.ui_helpers import set_page_config
-    from src.core.constants import FASTAPI_URL
+    from src.core.logger import logger
 except ImportError as e:
     st.error(f"Error crítico al importar módulos: {e}")
     st.stop()
 
+# --- INICIALIZACIÓN Y LÓGICA DE AUTENTICACIÓN ---
+set_page_config("AIPost - Login")
+
+# Le pasamos protect_route=False porque esta es la página de login.
+ensure_auth(protect_route=False)
+
+# --- LÓGICA DE REDIRECCIÓN CENTRALIZADA ---
+# Si después de `ensure_auth`, el estado indica que el usuario está logueado,
+# lo redirigimos al dashboard. Esta es la única fuente de verdad.
+if st.session_state.get('aipost_logged_in'):
+    st.switch_page("pages/Dashboard.py")
+
+# El resto del script solo se ejecutará si el usuario NO está logueado.
+
+# --- FUNCIÓN HELPER ---
 def get_img_as_base64(file):
     try:
         with open(file, "rb") as f:
@@ -21,57 +36,37 @@ def get_img_as_base64(file):
         return ""
 
 # --- CONFIGURACIÓN Y ESTILOS ---
-set_page_config("AIPost - Login")
 img = get_img_as_base64("./src/assets/login_bg_full2.jpg")
 
 page_bg_img = f"""
     <style>
         /* Ocultar la decoración del menú de Streamlit */
         #MainMenu, header, footer {{visibility: hidden;}}
-
-        /* Eliminar el padding del contenedor principal de la app */
-        .block-container {{
-            padding: 0 !important;
-            margin: 0 !important;
-        }}
-
-        /* Hacer que el body ocupe toda la ventana y colocar el background image */
+        .block-container {{ padding: 0 !important; margin: 0 !important; }}
         body {{
             min-height: 100vh !important;
             min-width: 100vw !important;
             background-image: url("data:image/png;base64,{img}");
-            background-size: cover; /* Cambiado a 'cover' para llenar el espacio */
+            background-size: cover;
             background-position: center center;
             background-repeat: no-repeat;
         }}
-
-        /* Para Streamlit 1.x, también debemos cubrir el app root */
         .stApp {{
             min-height: 100vh !important;
             min-width: 100vw !important;
-            background: transparent !important; /* Transparente para heredar el fondo del body */
+            background: transparent !important;
         }}
-
-        /* Asegurar que el layout de columnas ocupe toda la altura y que sea transparente */
         [data-testid="stHorizontalBlock"] {{
             height: 100vh;
             background: transparent !important;
             align-items: center;
         }}
-
-        /* --- Columna de la Imagen (Izquierda) --- */
         [data-testid="stHorizontalBlock"] > div:nth-child(1) {{
             padding: 0 !important;
             height: 100vh;
             background: transparent !important;
         }}
-
-        /* Estilo para la imagen dentro de su contenedor (puede omitirse si la imagen es solo bg) */
-        [data-testid="stImage"] img {{
-            display: none !important; 
-        }}
-
-        /* --- Columna del Formulario (Derecha) --- */
+        [data-testid="stImage"] img {{ display: none !important; }}
         [data-testid="stHorizontalBlock"] > div:nth-child(2) {{
             display: flex;
             justify-content: center;
@@ -79,7 +74,6 @@ page_bg_img = f"""
             height: 100vh;
             backdrop-filter: blur(2px);
         }}
-        
         [data-testid="stHorizontalBlock"] > div:nth-child(2) > div {{
             width: 80%;
             max-width: 450px;
@@ -89,12 +83,8 @@ page_bg_img = f"""
             box-shadow: 0 8px 24px rgba(0,0,0,0.1);
             animation: fadeIn 0.8s ease-in-out;
         }}
-
-        /* Responsive: en pantallas pequeñas, ajustar el layout */
         @media (max-width: 768px) {{
-            [data-testid="stHorizontalBlock"] > div:nth-child(1) {{
-                display: none;
-            }}
+            [data-testid="stHorizontalBlock"] > div:nth-child(1) {{ display: none; }}
             [data-testid="stHorizontalBlock"] > div:nth-child(2) {{
                 background-color: rgba(255,255,255,0.93);
                 backdrop-filter: blur(0px);
@@ -104,14 +94,10 @@ page_bg_img = f"""
                 box-shadow: none;
             }}
         }}
-
-        /* Animación de entrada */
         @keyframes fadeIn {{
             from {{opacity: 0; transform: translateY(20px);}}
             to {{opacity: 1; transform: translateY(0);}}
         }}
-
-        /* Estilos adicionales para los elementos del formulario */
         button[data-baseweb="tab"] {{ font-size: 18px !important; }}
         .stButton > button {{ transition: transform 0.2s ease-in-out; }}
         .stButton > button:hover {{ transform: scale(1.02); }}
@@ -120,34 +106,8 @@ page_bg_img = f"""
 
 st.markdown(page_bg_img, unsafe_allow_html=True)
 
-# --- INICIALIZACIÓN Y LÓGICA DE AUTENTICACIÓN ---
-initialize_aipost_session()
-initialize_session_state()
 
-# 1. Revalidar sesión de Supabase
-revalidate_aipost_session()
-
-# 2. Intentar procesar parámetros de la URL de OAuth
-params_were_processed = process_auth_params()
-
-# 3. Lógica de redirección
-# Si los parámetros se procesaron exitosamente, linkedin_auth forzará un rerun o switch_page.
-# Si no, procedemos con la lógica normal de la página de login.
-
-# Si el procesamiento de parámetros tuvo éxito, la función ya habrá hecho rerun/switch_page,
-# por lo que el código siguiente en este script run no es tan crítico, pero
-# esta estructura es robusta para futuras modificaciones.
-if params_were_processed:
-    # process_auth_params ya se encarga de redirigir o hacer rerun,
-    # por lo que no hacemos nada aquí, solo evitamos la redirección de abajo.
-    st.switch_page("pages/01_Dashboard.py")
-    
-# Si el usuario ya está logueado y NO venimos de un callback de OAuth, redirigir.
-if is_aipost_logged_in() and not ("auth_provider" in st.query_params):
-    st.switch_page("pages/01_Dashboard.py")
-
-
-# --- LAYOUT DE LA PÁGINA DE LOGIN (solo se muestra si no se ha redirigido) ---
+# --- LAYOUT DE LA PÁGINA DE LOGIN---
 col_img, col_form = st.columns([0.9, 0.9], gap="small")
 
 with col_form:
@@ -163,14 +123,14 @@ with col_form:
             st.text_input("Contraseña", type="password", placeholder="••••••••", key="login_password")
             if st.form_submit_button("Iniciar Sesión", use_container_width=True, type="primary"):
                 if login(st.session_state.login_email, st.session_state.login_password):
-                    st.rerun()
+                    # Si el login tiene éxito, simplemente hacemos un rerun.
+                    # La lógica de redirección de arriba se encargará del resto.
+                    st.switch_page("pages/Dashboard.py")
                 else:
-                    st.warning("Por favor, introduce tus credenciales.")
-        
-        st.divider()
-        st.markdown("<p style='text-align: center; color: grey;'>O inicia sesión con</p>", unsafe_allow_html=True)
-        linkedin_login_url = f"{FASTAPI_URL}/auth/login/linkedin?create_platform_session=true"
-        st.link_button("Iniciar Sesión con LinkedIn", linkedin_login_url, use_container_width=True)
+                    # La función login ya muestra un st.error o st.warning,
+                    # por lo que no es necesario mostrar otro mensaje aquí.
+                    pass
+
 
     # --- FORMULARIO DE REGISTRO ---
     with signup_tab:
