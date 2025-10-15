@@ -192,7 +192,7 @@ def render_sidebar() -> Dict[str, Any] | None:
         # --- SECCIÓN DE USUARIO ---
         user = st.session_state.get('user')
         if user:
-            logger.info(f"AQUI ESTA EL USER {user}")
+            logger.info(f"AQUI ESTA EL USER: dict={user.__dict__ if hasattr(user, '__dict__') else str(user)}")
             user_name = getattr(user, 'name', 'Usuario Anónimo')
             user_email = getattr(user, 'email', 'Sin email')
             user_initials = get_user_initials(user_name)
@@ -209,9 +209,9 @@ def render_sidebar() -> Dict[str, Any] | None:
         
         # --- NAVEGACIÓN PRINCIPAL ---
         st.markdown('<div class="nav-title">Herramientas</div>', unsafe_allow_html=True)
-        st.markdown("<a href='Dashboard' target='_self' class='nav-link'><i class='bi bi-grid-fill'></i> Dashboard</a>", unsafe_allow_html=True)
-        st.markdown("<a href='Content_Generation' target='_self' class='nav-link'><i class='bi bi-magic'></i> Generar Contenido</a>", unsafe_allow_html=True)
-        st.markdown("<a href='Posts_Management' target='_self' class='nav-link'><i class='bi bi-archive-fill'></i> Gestionar Posts</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='/Dashboard' target='_self' class='nav-link'><i class='bi bi-grid-fill'></i> Dashboard</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='/Content_Generation' target='_self' class='nav-link'><i class='bi bi-magic'></i> Generar Contenido</a>", unsafe_allow_html=True)
+        st.markdown(f"<a href='/Posts_Management' target='_self' class='nav-link'><i class='bi bi-archive-fill'></i> Gestionar Posts</a>", unsafe_allow_html=True)
         
         # --- CONEXIONES SOCIALES ---
         st.markdown('<div class="nav-title">Conexiones</div>', unsafe_allow_html=True)
