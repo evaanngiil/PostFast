@@ -5,6 +5,8 @@ from typing import Dict, Any, Optional, List
 import datetime
 import uuid
 from src.services.supabase_client import get_supabase
+from src.services.redis_client import redis_client
+from src.supabase_auth import get_aipost_user
 
 try:
     from src.core.constants import FASTAPI_URL
@@ -14,15 +16,32 @@ except ImportError:
 
 def _get_current_token() -> Optional[str]:
     """
-    Safely retrieves the current access token from Streamlit's session state.
-    This is the ONLY place that should know the structure of st.session_state.
+    Obtiene el token de autenticación de LinkedIn.
+    1. Busca en la sesión actual de Streamlit (`st.session_state`).
+    2. Si no lo encuentra, intenta recuperarlo desde Redis.
     """
-    # Buscamos el token de la plataforma conectada actualmente.
-    # Asumimos una lógica simple donde solo hay una plataforma a la vez.
+    # 1. Probar con el token de la sesión activa de Streamlit
     if st.session_state.get("li_connected"):
-        return (st.session_state.get("li_token_data") or {}).get("access_token")
-    # elif st.session_state.get("fb_connected"):
-    #     return st.session_state.get("fb_token_data", {}).get("access_token")
+        token = (st.session_state.get("li_token_data") or {}).get("access_token")
+        if token:
+            logger.debug("Token de LinkedIn obtenido desde st.session_state.")
+            return token
+
+    #TODO Depurar esto
+    
+    # 2. Si no está en la sesión, intentar obtenerlo desde Redis
+    aipost_user = get_aipost_user()
+    if aipost_user and hasattr(aipost_user, 'id'):
+        logger.debug(f"Intentando obtener el token de LinkedIn desde Redis.[user_id={aipost_user.id}]")
+        token_from_redis = redis_client.get_linkedin_token_from_redis(user_id=aipost_user.id)
+        if token_from_redis:
+            logger.debug("Token de LinkedIn obtenido desde Redis.")
+            # Podrías volver a guardar el token en la sesión aquí si lo necesitas
+            st.session_state['li_token_data'] = {'access_token': token_from_redis}
+            st.session_state['li_connected'] = True
+            return token_from_redis
+
+    logger.warning("No se pudo encontrar un token de LinkedIn válido.")
     return None
 
 # Crear una sesión de requests que inyectará el token en cada llamada.
@@ -47,10 +66,33 @@ def get_api_client() -> requests.Session:
         logger.warning("API client initialized without an access token. Calls to protected endpoints will fail.")
     return session
 
+
+def get_user_profile() -> Optional[Dict[str, Any]]:
+    """
+    Llama al endpoint /auth/me para obtener los datos del perfil del usuario,
+    incluyendo la información de LinkedIn si existe.
+    """
+    client = get_api_client()
+    # Asegurarnos de que el cliente tenga autenticación
+    if not client.auth:
+        logger.error("Intento de llamar a /auth/me sin un token de autenticación.")
+        return None
+
+    endpoint = f"{FASTAPI_URL}/auth/me"
+    try:
+        response = client.get(endpoint)
+        response.raise_for_status()  # Lanza un error para respuestas 4xx/5xx
+        return response.json()
+    except requests.exceptions.HTTPError as http_err:
+        logger.error(f"Error HTTP al llamar a /auth/me: {http_err}")
+        if http_err.response.status_code == 401:
+            st.warning("Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.")
+    except Exception as e:
+        logger.error(f"Error inesperado al llamar a /auth/me: {e}")
+    return None
+
+
 # --- Funciones de la API que usan el cliente ---
-
-
-
 def get_task_status(task_id: str) -> Dict[str, Any]:
     """Conservado solo si se usa para otras tareas no analíticas."""
     # Actualmente no hay endpoint de analytics; devolvemos 404-like structure si se llama.
