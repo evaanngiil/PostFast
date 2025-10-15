@@ -1,12 +1,16 @@
 import streamlit as st
 from supabase import AuthApiError
-from src.services.supabase_client import get_supabase
 from typing import Optional
+import requests
+
 from src.core.logger import logger
+from src.core.constants import FASTAPI_URL
+from src.services.supabase_client import get_supabase
 
 supabase = get_supabase()
 
 # --- FUNCIONES DE AUTENTICACIÓN (AIPost) ---
+
 def get_current_user() -> Optional[object]:
     """Devuelve el usuario actual de Supabase o None si no hay sesión activa."""
     try:
@@ -35,126 +39,113 @@ def signup(email: str, password: str) -> bool:
         st.error(f"Ocurrió un error inesperado: {e}")
         return False
 
-
-# -- funciones de responsabilidad única para estado AIPost --
+# -- helpers de estado de AIPost --
 def mark_aipost_logged_in(user: object) -> None:
     """Marca al usuario como logueado en AIPost y guarda el objeto user."""
     st.session_state['aipost_logged_in'] = True
     st.session_state['user'] = user
 
-
 def mark_aipost_logged_out() -> None:
     """Marca al usuario como no logueado en AIPost y limpia la info de usuario."""
     st.session_state['aipost_logged_in'] = False
     st.session_state['user'] = None
-
+    # Limpiamos también el token unificado
+    st.session_state['auth_token_for_url'] = None
 
 def is_aipost_logged_in() -> bool:
     """Comprueba si hay un usuario logueado en AIPost."""
     return bool(st.session_state.get('aipost_logged_in'))
 
-
 def get_aipost_user() -> Optional[object]:
     """Devuelve el objeto user almacenado para AIPost o None."""
     return st.session_state.get('user')
 
+def get_user_from_supabase_token(jwt: str):
+    try:
+        supabase = get_supabase()
+        # La librería de Supabase puede validar un JWT y devolver el usuario asociado
+        user_response = supabase.auth.get_user(jwt)
+        return user_response.user
+    except Exception:
+        return None
+
+def get_user_from_supabase_token(jwt: str):
+    try:
+        supabase = get_supabase()
+        # La librería de Supabase puede validar un JWT y devolver el usuario asociado
+        user_response = supabase.auth.get_user(jwt)
+        return user_response.user
+    except Exception:
+        return None
+
 
 def login(email: str, password: str) -> bool:
-    """Inicia sesión de un usuario existente en Supabase y marca AIPost como logueado."""
+    """Inicia sesión, obtiene un token unificado del backend y lo guarda."""
     try:
-        res = supabase.auth.sign_in_with_password({"email": email, "password": password})
-        mark_aipost_logged_in(res.user)
-        return True
+        response = supabase.auth.sign_in_with_password({"email": email, "password": password})
+        if response.user and response.session:
+            mark_aipost_logged_in(response.user)
+            logger.info("Login de Supabase exitoso.")
+            return True
+        else:
+            st.warning("Credenciales incorrectas. Por favor, inténtalo de nuevo.")
+            return False
     except AuthApiError as e:
-        st.error(f"Error en el inicio de sesión: {e.message}")
+        st.error(f"Error de autenticación: {e.message}")
         return False
     except Exception as e:
-        st.error(f"Ocurrió un error inesperado: {e}")
+        logger.error(f"Error inesperado durante el login: {e}")
+        st.error("Ocurrió un error de conexión. Inténtalo de nuevo más tarde.")
         return False
 
 
 def logout() -> None:
-    """Cierra sesión limpiando session_state y cookies (solo AIPost-related keys aquí)."""
+    """Cierra sesión en Supabase, en el backend y limpia todo el session_state."""
     try:
         supabase.auth.sign_out()
     except Exception as e:
-        logger.error(f"Error signing out: {e}")
+        logger.error(f"Error en Supabase sign_out: {e}")
 
-    # Limpiar específicamente las claves de LinkedIn (no tocar aquí la semántica de LinkedIn)
-    linkedin_keys_to_delete = [
-        'li_connected', 'li_token_data', 'li_user_info', 'user_accounts',
-        'selected_account', 'auth_error', 'processed_auth_params',
-        'session_verified', 'LinkedIn_accounts_loaded_flag'
-    ]
-    for k in linkedin_keys_to_delete:
-        st.session_state.pop(k, None)
+    # Limpiar todo el estado de sesión para asegurar un inicio limpio
+    keys_to_clear = list(st.session_state.keys())
+    for key in keys_to_clear:
+        del st.session_state[key]
 
-    # Limpiar variables específicas de AIPost
-    mark_aipost_logged_out()
+    # Limpiar query params
     st.query_params.clear()
 
-    # Call backend logout to clean up server-side session (best-effort)
+    # Llamar al logout del backend (best-effort)
     try:
-        import requests
-        from src.core.constants import FASTAPI_URL
-        logout_url = f"{FASTAPI_URL}/auth/logout"
-        with requests.sessions.Session() as session:
-            response = session.get(logout_url, timeout=10)
-            logger.debug(f"Backend logout response: {response.status_code}")
+        requests.get(f"{FASTAPI_URL}/auth/logout", timeout=5)
+        logger.info("Llamada al endpoint de logout del backend realizada.")
     except Exception as e:
-        logger.warning(f"Failed to call backend logout: {e}")
+        logger.warning(f"No se pudo llamar al logout del backend: {e}")
 
-    try:
-        st.rerun()
-    except Exception:
-        st.info("Sesión cerrada. Recarga manualmente para volver al login.")
+    # Forzar la recarga para volver a la página de login
+    st.rerun()
 
 
 def revalidate_aipost_session() -> None:
     """
-    Comprueba si hay una sesión de Supabase activa y actualiza st.session_state (AIPost-only).
-    Debe llamarse al principio de cada script de página protegida.
+    Comprueba si hay una sesión de Supabase activa y actualiza st.session_state.
+    Se usa como una sincronización secundaria, la fuente de verdad principal es el token.
     """
-    # Evita re-validaciones innecesarias en la misma ejecución del script
     if st.session_state.get('aipost_session_revalidated'):
         return
 
     try:
-        # get_session() lee la cookie/token almacenado por el cliente de Supabase
         session = supabase.auth.get_session()
-
-        if session and session.user:
+        if session and session.user and not is_aipost_logged_in():
+            # Si hay sesión de Supabase pero no de AIPost, la marcamos.
+            # Esto puede pasar en la primera carga si hay una cookie de Supabase válida.
             mark_aipost_logged_in(session.user)
-        else:
+            logger.debug("Revalidación de Supabase encontró una sesión activa.")
+        elif not session or not session.user:
+            # Si no hay sesión de Supabase, nos aseguramos de que esté marcado como logged out.
             mark_aipost_logged_out()
 
     except Exception as e:
-        # En caso de error de red, etc., asume que no está logueado
-        st.error(f"Error al verificar la sesión: {e}")
+        st.error(f"Error al verificar la sesión de Supabase: {e}")
         mark_aipost_logged_out()
 
-    # Marca que la re-validación se ha hecho en esta ejecución
     st.session_state['aipost_session_revalidated'] = True
-
-
-def initialize_aipost_session() -> None:
-    """Inicializa las variables de sesión específicas de AIPost."""
-    aipost_defaults = {
-        'aipost_logged_in': False,
-        'aipost_session_revalidated': False,
-        'user': None,
-    }
-    for k, v in aipost_defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
-
-
-def initialize_supabase_session() -> None:
-    """Inicializa las variables de sesión específicas de Supabase (no LinkedIn)."""
-    supabase_defaults = {
-        'session_revalidated': False,
-        'supabase_session_active': False,
-    }
-    for k, v in supabase_defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
