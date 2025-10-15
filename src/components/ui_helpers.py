@@ -1,3 +1,4 @@
+import os
 import streamlit as st
 from typing import List, Optional
 from PIL import Image
@@ -37,7 +38,8 @@ def render_feedback_box(message: str, type_: str = "info"):
 
 def set_page_config(title: str):
     """Configura los parámetros básicos de la página Streamlit."""
-    icon = Image.open("./src/assets/AIPOST.jpg")
+    favicon_path = os.path.join(os.path.dirname(__file__), "..", "assets", "favicon.png")
+    icon = Image.open(favicon_path)
 
     st.set_page_config(
         page_title=title,
