@@ -31,3 +31,6 @@ code_*
 
 *.http
 CLAUDE.md
+example.*
+backup
+.DS*
