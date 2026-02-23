@@ -1,15 +1,46 @@
 import streamlit as st
-from src.linkedin_auth import ensure_auth
-from src.components.sidebar import render_sidebar
+from supabase import AuthApiError, PostgrestAPIError
+
 from src.components.ui_helpers import set_page_config
 
 # --- INICIALIZACIÓN Y AUTENTICACIÓN ---
 set_page_config("AIPost - Dashboard")
+
+
+from src.linkedin_auth import ensure_auth
+from src.components.sidebar import render_sidebar
+from src.supabase_auth import get_user_profile, get_current_user, mark_aipost_logged_out
+from src.services.supabase_client import get_supabase
+from src.core.logger import logger
+
 ensure_auth(protect_route=True)
+
+# --- VERIFICAR COMPLETITUD DEL ONBOARDING ---
+user = get_current_user() 
+
+if not user:
+    logger.error("Usuario no encontrado en session_state, redirigiendo a login.")
+    mark_aipost_logged_out()
+    st.switch_page("app.py")
+
+profile = get_user_profile(user.id)
+
+if profile is None:
+    logger.info(f"Perfil no encontrado para el usuario {user.id}. Redirigiendo a Onboarding.")
+
+elif not profile.get('has_completed_onboarding'):
+    # 2. PERFIL EXISTE, PERO INCOMPLETO: Redirigir al wizard
+    logger.info(f"Usuario {user.id} no ha completado onboarding. Redirigiendo.")
+    st.switch_page("pages/Onboarding.py")
+
+# 3. PERFIL EXISTE Y COMPLETO: Continuar y mostrar el Dashboard.
+logger.debug(f"Usuario {user.id} verificado. Mostrando Dashboard.")
+
+# --- SI LLEGAMOS AQUÍ, EL USUARIO HA COMPLETADO EL ONBOARDING ---
 
 
 # --- RENDERIZADO DEL SIDEBAR ---
-selected_account = render_sidebar()
+selected_account = render_sidebar(user)
 
 # --- ESTILOS PERSONALIZADOS ---
 st.markdown("""
@@ -87,19 +118,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-content_gen_url = "/Generate_Content"
-posts_mgmt_url = "/Post_Managment"
-
-# --- DATOS DEL USUARIO ---
-# Obtenemos el usuario de st.session_state, que ya fue poblado por ensure_auth()
-user = st.session_state.get('user')
-welcome_name = ""
-if user:
-    # Intenta obtener el nombre desde user.user_metadata, que es más estándar en Supabase
-    welcome_name = user.user_metadata.get('name', user.email)
+content_gen_url = "/Content_Generation"
+posts_mgmt_url = "/Posts_Management"
 
 # --- ENCABEZADO ---
-st.markdown(f"<div class='dashboard-header'>👋 ¡Hola, {welcome_name}!</div>", unsafe_allow_html=True)
+welcome_name = profile.get('first_name', user.email)
+st.markdown(f"<div class='dashboard-header'>¡Bienvenido de nuevo, {welcome_name}! 👋</div>", unsafe_allow_html=True)
 st.markdown("<div class='dashboard-subtitle'>Accede rápidamente a tus herramientas para crear, gestionar y analizar contenido.</div>", unsafe_allow_html=True)
 
 # --- ACCIONES PRINCIPALES ---
