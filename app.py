@@ -133,16 +133,29 @@ with col_form:
 
 
     # --- FORMULARIO DE REGISTRO ---
-    with signup_tab:
+with signup_tab:
         with st.form("signup_form"):
+            
+            st.text_input("Nombre", key="signup_first_name", placeholder="Ana")
+            st.text_input("Apellidos", key="signup_last_name", placeholder="García")
+
             st.text_input("Email", key="signup_email", placeholder="tu@email.com")
             st.text_input("Crea una contraseña", type="password", key="signup_password")
             st.text_input("Confirma tu contraseña", type="password", key="confirm_password")
             st.checkbox("Acepto los Términos y la Política de Privacidad.", key="terms")
+            
             if st.form_submit_button("Crear Cuenta", use_container_width=True, type="primary"):
-                if not st.session_state.terms:
+                
+                if not st.session_state.signup_first_name or not st.session_state.signup_last_name:
+                    st.error("Debes introducir tu nombre y apellidos.")
+                elif not st.session_state.terms:
                     st.error("Debes aceptar los términos y condiciones.")
                 elif st.session_state.signup_password != st.session_state.confirm_password:
                     st.error("Las contraseñas no coinciden.")
                 else:
-                    signup(st.session_state.signup_email, st.session_state.signup_password)
+                    signup(
+                        st.session_state.signup_email, 
+                        st.session_state.signup_password, 
+                        st.session_state.signup_first_name,
+                        st.session_state.signup_last_name
+                    )
