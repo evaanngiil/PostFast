@@ -13,7 +13,7 @@ from requests_oauthlib import OAuth2Session
 
 # --- Core Imports ---
 from src.core.constants import (
-    SECRET_KEY, LI_CLIENT_ID, LI_REDIRECT_URI, BASE_URL, LI_CLIENT_SECRET
+    SECRET_KEY, LI_CLIENT_ID, LI_REDIRECT_URI, BASE_URL, LI_CLIENT_SECRET, LI_SCOPES
 )
 from src.core.lifespan import lifespan
 from src.core.logger import logger
@@ -77,7 +77,8 @@ def _build_streamlit_redirect_url(provider: str, token: str, user_info: Dict, cr
 @app.get("/auth/login/linkedin")
 async def linkedin_login(request: Request, create_platform_session: Optional[str] = None):
     """Inicia el flujo de autenticación Oauth2 con LinkedIn."""
-    scope = ['openid', 'profile', 'email', 'w_member_social', 'r_organization_admin']
+    scope =  LI_SCOPES
+
     oauth = OAuth2Session(LI_CLIENT_ID, redirect_uri=LI_REDIRECT_URI, scope=scope)
     
     authorization_url, state = oauth.authorization_url("https://www.linkedin.com/oauth/v2/authorization")
@@ -115,6 +116,7 @@ async def linkedin_callback(request: Request, code: str, state: str, error: Opti
         # 2. Obtener información del usuario
         user_info = get_linkedin_user_info(access_token)
         user_provider_id = user_info.get('sub')
+
         if not user_provider_id:
             raise Exception("No se pudo obtener el 'sub' (ID de usuario) de LinkedIn.")
 
@@ -226,7 +228,7 @@ async def get_current_user_session(
             {"last_accessed_at": datetime.now(timezone.utc).isoformat()}
         ).eq("access_token", token).execute()
         
-        
+        logger.debug(f"Sesión verificada para el token proporcionado. Usuario : {result.get('user_info')}")
         return {
             "authenticated": True,
             "provider": result.get('provider'),
@@ -263,6 +265,18 @@ async def logout_user(authorization: Optional[str] = Header(None)):
 @app.get("/")
 async def root():
     return {"message": "AIPost Backend API está en funcionamiento!"}
+
+@app.get("/auth/email-confirmed")
+async def email_confirmed_redirect():
+    """
+    Redirige al usuario a la página de Streamlit de confirmación de email
+    después de que hagan clic en el enlace de verificación.
+    """
+    # Construye la URL de la página de Streamlit.
+    # El nombre 'Email_Confirmation' viene del nombre del archivo 'Email_Confirmation.py'.
+    streamlit_confirmation_url = f"{BASE_URL}/Email_Confirmation"
+    logger.info(f"Redirigiendo a la página de confirmación de Streamlit: {streamlit_confirmation_url}")
+    return RedirectResponse(streamlit_confirmation_url)
 
 if ROUTERS_LOADED:
     app.include_router(

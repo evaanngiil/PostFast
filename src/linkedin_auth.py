@@ -1,4 +1,5 @@
 import streamlit as st
+import os
 import requests
 import json
 import base64
@@ -29,7 +30,13 @@ except ImportError:
     logger.error("Dummy social API funcs used.")
     def get_linkedin_organizations(token): return []
 
-cookies = CookieController(key=SECRET_KEY)
+
+def get_cookie_controller():
+    """
+    Inicializa el controlador de cookies solo cuando se llama, 
+    evitando que se ejecute al importar el módulo y rompa set_page_config.
+    """
+    return CookieController(key=SECRET_KEY)
 
 # ----------------- INICIALIZADORES / HELPERS -----------------
 
@@ -151,6 +158,8 @@ def process_auth_params() -> bool:
             
             user_info_json = base64.urlsafe_b64decode(user_info_b64.encode() + b'==').decode()
             user_info = json.loads(user_info_json)
+            
+            logger.debug(f"Decoded LinkedIn user info: {user_info}")
             st.session_state.li_user_info = user_info
             
             # 2. MARCAR SIEMPRE COMO CONECTADO A LINKEDIN
@@ -163,20 +172,28 @@ def process_auth_params() -> bool:
                 # Si venimos del botón "Iniciar Sesión con LinkedIn", creamos/validamos la sesión de AIPost
                 email = user_info.get('email')
                 name = user_info.get('name', 'Usuario LinkedIn')
-                if email:
+
+                # Use the LinkedIn user ID ('id' or 'sub') for the MockUser id
+                user_id = user_info.get('id') or user_info.get('sub')
+
+                if email and user_id:
                     # Simula la creación de un objeto User para marcar el login en AIPost
                     mock_user = type('MockUser', (), {
-                        'email': email, 'name': name,
+                        'id': user_id,
+                        'email': email,
+                        'name': name,
                         'user_metadata': {'name': name, 'email': email}
                     })()
                     mark_aipost_logged_in(mock_user)
                     logger.info(f"AIPost platform session created/validated for {email}")
-                else:
+
+                # Handle cases where email or id might be missing from LinkedIn info
+                elif not user_id:
+                     st.session_state.auth_error = "No se pudo obtener el ID de usuario de LinkedIn para iniciar sesión."
+                     st.session_state.li_connected = False # Revert connection if essential info missing
+
+                elif not email:
                     st.session_state.auth_error = "No se pudo obtener el email de LinkedIn para iniciar sesión."
-            elif not is_aipost_logged_in():
-                # Si intentan conectar LinkedIn sin tener una sesión de AIPost, mostramos error
-                st.session_state.auth_error = "Debes iniciar sesión en AIPost antes de conectar tu cuenta de LinkedIn."
-                st.session_state.li_connected = False # Revertimos la conexión
 
             # 4. Redirigir al Dashboard
             st.switch_page("pages/Dashboard.py")
@@ -278,8 +295,11 @@ def _restore_session_from_api(token: str) -> bool:
 def ensure_auth(protect_route: bool = True):
     """
     Función central de autenticación. Debe ser llamada al inicio de CADA página.
+    Verifica si el usuario está logueado y si no, intenta restaurar la sesión.
+    Si protect_route es True, redirige al usuario a la página de inicio si no está logueado.
     """
     # initialize_session_state()
+    cookies = get_cookie_controller()
 
     # 1. Si la sesión ya está verificada en esta ejecución, no hacemos nada más.
     if st.session_state.get('session_verified'):
@@ -287,15 +307,24 @@ def ensure_auth(protect_route: bool = True):
 
     # 2. Revalidar la sesión de Supabase si existe (sincroniza el estado local de Supabase)
     revalidate_aipost_session()
+    
+    if protect_route and not st.session_state.get('aipost_logged_in'):
+        st.warning("Debes iniciar sesión para acceder a esta página.")
+        st.switch_page("app.py")
+        st.stop()
 
     # 3. Intentar restaurar la sesión usando un token, ya sea de la URL o del estado de sesión.
     token = st.query_params.get("auth_token") or st.session_state.get('auth_token_for_url')
     logger.debug(f"[ensure_auth] auth_token from URL or session_state: {'PRESENT' if token else 'NOT PRESENT'}")
 
     if  token is not None:
-        cookies.set("linkedin_access_token", token, max_age=3600 * 24 * 7)
-        logger.debug(f"Guardado token de LinkedIn en cookies para persistencia. {cookies.getAll()}")
+        try:
+            cookies.set("linkedin_access_token", token, max_age=7 * 24 * 60 * 60) # 7 días
+        except Exception as e:
+            logger.warning(f"No se pudo establecer la cookie: {e}")
     else:
+        # Si NO tenemos token en memoria, intentamos leer la cookie
+        # _ = cookies.getAll()
         token = cookies.get("linkedin_access_token")
         if token:
             st.session_state.li_token_data = {"access_token": token}
@@ -321,14 +350,6 @@ def ensure_auth(protect_route: bool = True):
             st.query_params.clear() # Limpiamos para evitar bucles
             # Forzamos un rerun para que el flujo de restauración de arriba se active con el nuevo token
             st.rerun()
-
-    # 5. Lógica de protección de ruta.
-    # Si después de todos los intentos, el usuario no está logueado y la ruta está protegida,
-    # lo enviamos a la página de login.
-    if protect_route and not st.session_state.get('aipost_logged_in'):
-        st.warning("Debes iniciar sesión para acceder a esta página.")
-        st.switch_page("app.py")
-        st.stop()
 
 
 
@@ -362,6 +383,8 @@ def display_auth_status(sidebar: bool = True):
             st.caption("Conectado a LinkedIn")
 
         if container.button("Desconectar LinkedIn", key="disconnect_li_btn", use_container_width=True):
+            cookies.remove("linkedin_access_token")
+
             st.session_state.li_connected = False
             st.session_state.li_token_data = None
             st.session_state.li_user_info = None
@@ -370,6 +393,7 @@ def display_auth_status(sidebar: bool = True):
             st.session_state.selected_account = None
             try: 
                 requests.get(f"{FASTAPI_URL}/auth/logout", timeout=5)
+                logger.info("Llamada al endpoint de logout del backend realizada.")
             except Exception: 
                 pass
             st.rerun()

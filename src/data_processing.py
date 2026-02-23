@@ -1,5 +1,3 @@
-## Eliminado psycopg; este módulo ya no abre conexiones directas
-
 from src.core.constants import DATABASE_URL
 from src.core.logger import logger 
 from src.services.supabase_client import get_supabase
@@ -44,12 +42,6 @@ def setup_database():
         logger.error(f"Supabase initialization failed: {e}")
 
 
-## Todas las funciones de transformación/carga de Analytics eliminadas
-
-
-
-
-# --- Query Functions for Dashboards ---
 
 
 

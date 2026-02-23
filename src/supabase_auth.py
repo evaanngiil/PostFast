@@ -1,10 +1,10 @@
 import streamlit as st
-from supabase import AuthApiError
+from supabase import AuthApiError, PostgrestAPIError
 from typing import Optional
 import requests
 
 from src.core.logger import logger
-from src.core.constants import FASTAPI_URL
+from src.core.constants import FASTAPI_URL, BASE_URL
 from src.services.supabase_client import get_supabase
 
 supabase = get_supabase()
@@ -23,19 +23,48 @@ def get_current_user() -> Optional[object]:
         return None
 
 
-def signup(email: str, password: str) -> bool:
+def signup(email: str, password: str, first_name: str, last_name: str) -> bool:
     """Registra un nuevo usuario en Supabase. No realiza login automático."""
     try:
-        res = supabase.auth.sign_up({"email": email, "password": password})
+        options = {
+            "data": {
+                "first_name": first_name,
+                "last_name": last_name
+            },
+            "email_redirect_to": BASE_URL 
+        }
+
+        # Pasamos first_name y last_name para leerlos desde user_metadata
+        res = supabase.auth.sign_up({
+            "email": email,
+            "password": password,
+            "options": options
+        })
 
         if getattr(res, "user", None):
+            user = res.user
+            sb_db = get_supabase()
+            
+            try:
+                logger.info(f"Perfil inicial creado para {user.id}.")
+            except PostgrestAPIError as e:
+                logger.error(f"Error al crear perfil inicial (PostgrestAPIError): {e.message}")
+                st.error(f"Error al crear tu perfil: {e.message}")
+            except Exception as e:
+                logger.error(f"Error inesperado al crear perfil inicial: {e}")
+                st.error(f"Ocurrió un error inesperado: {e}")
+                
+            get_user_profile.clear()
+        
             st.success("¡Registro exitoso! Revisa tu email para verificar tu cuenta.")
-            return False  # No se loguea hasta verificar
+            return False
         return False
     except AuthApiError as e:
+        logger.error(f"Error en el registro (AuthApiError): {e.message}")
         st.error(f"Error en el registro: {e.message}")
         return False
     except Exception as e:
+        logger.error(f"Error inesperado en signup: {e}")
         st.error(f"Ocurrió un error inesperado: {e}")
         return False
 
@@ -69,15 +98,26 @@ def get_user_from_supabase_token(jwt: str):
     except Exception:
         return None
 
-def get_user_from_supabase_token(jwt: str):
-    try:
-        supabase = get_supabase()
-        # La librería de Supabase puede validar un JWT y devolver el usuario asociado
-        user_response = supabase.auth.get_user(jwt)
-        return user_response.user
-    except Exception:
-        return None
 
+@st.cache_data(ttl=300, show_spinner=False) # Cacheamos por 5 mins
+def get_user_profile(user_id: str) -> Optional[dict]:
+    """
+    Obtiene el perfil de usuario de la tabla public.user_profiles.
+    Devuelve None si el perfil no se encuentra.
+    """
+    try:
+        sb = get_supabase()
+        result = sb.table("user_profiles").select("*").eq("id", user_id).single().execute()
+        return result.data
+    except PostgrestAPIError as e:
+        if e.code == 'PGRST116': # "Single row not found"
+            logger.warning(f"No se encontró perfil para {user_id}. Es un usuario nuevo.")
+            return None # Devuelve None si no se encuentra el perfil
+        logger.error(f"Error de Postgrest al obtener perfil: {e}")
+        st.error(f"Error al cargar el perfil: {e.message}")
+        return None
+    except Exception as e:
+        logger.error(f"Error inesperado al obtener perfil: {e}")
 
 def login(email: str, password: str) -> bool:
     """Inicia sesión, obtiene un token unificado del backend y lo guarda."""
@@ -86,6 +126,7 @@ def login(email: str, password: str) -> bool:
         if response.user and response.session:
             mark_aipost_logged_in(response.user)
             logger.info("Login de Supabase exitoso.")
+            get_user_profile.clear()
             return True
         else:
             st.warning("Credenciales incorrectas. Por favor, inténtalo de nuevo.")
@@ -106,6 +147,8 @@ def logout() -> None:
     except Exception as e:
         logger.error(f"Error en Supabase sign_out: {e}")
 
+    get_user_profile.clear()
+    
     # Limpiar todo el estado de sesión para asegurar un inicio limpio
     keys_to_clear = list(st.session_state.keys())
     for key in keys_to_clear:
@@ -121,6 +164,7 @@ def logout() -> None:
     except Exception as e:
         logger.warning(f"No se pudo llamar al logout del backend: {e}")
 
+    mark_aipost_logged_out()
     # Forzar la recarga para volver a la página de login
     st.rerun()
 

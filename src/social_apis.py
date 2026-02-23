@@ -1,4 +1,3 @@
-# social_apis.py
 import requests
 from src.core.logger import logger
 from src.core.constants import  LI_API_URL
@@ -21,7 +20,11 @@ def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
                 return None # Devolver None si no es JSON válido, ya que esperamos dicts
         except requests.exceptions.HTTPError as e:
             logger.error(f"HTTPError en {func_name} (attempt {attempt + 1}/{max_retries}): {e.response.status_code} - {e.response.text[:200]}...") # Loguear inicio del error
-            if e.response.status_code >= 500 or e.response.status_code == 429:
+            #  Si el error es 429, no reintentar, ya que es un límite de cuota.
+            if e.response.status_code == 429:
+                 logger.error(f"API call {func_name} failed due to rate limiting (429). Daily quota likely exceeded. No retrying.")
+                 raise e # Re-lanzar la excepción para que sea manejada por la función que llama.
+            if e.response.status_code >= 500:
                 if attempt + 1 == max_retries: 
                     logger.error(f"API call {func_name} failed after {max_retries} retries.") 
                     raise
@@ -54,33 +57,104 @@ def post_to_instagram(ig_user_id, page_access_token, image_url=None, video_url=N
 
 
 # === LinkedIn ===
+# def get_linkedin_user_info(access_token):
+#     """
+#     Get user info from LinkedIn using the OpenID Connect /userinfo endpoint.
+#     Requires 'openid', 'profile', 'email' scopes.
+#     """
+#     headers = {"Authorization": f"Bearer {access_token}"}
+#     # Usar el endpoint estándar /userinfo para OpenID Connect
+#     userinfo_url = f"{LI_API_URL}/userinfo"
+#     logger.debug(f"Calling LinkedIn UserInfo endpoint: {userinfo_url}")
+
+#     def api_call():
+#         return requests.get(userinfo_url, headers=headers)
+
+#     user_info_data = fetch_with_retry_log(api_call, "get_linkedin_user_info (/userinfo)")
+
+#     # Es crucial que user_info_data sea un diccionario y contenga 'sub'
+#     if isinstance(user_info_data, dict) and 'sub' in user_info_data:
+    
+#         logger.info(f"Successfully fetched LinkedIn user info. User sub: {user_info_data.get('sub')}")
+
+#         # Aseguramos que el campo 'id' exista mapeado desde 'sub' para consistencia interna si se usa en otro lado
+#         logger.info(f"Formatted user info for frontend: {user_info_data}")
+        
+#         # Formatear la respuesta para que sea consistente y fácil de usar
+#         formatted_info = {
+#             "id": user_info_data.get("sub"),
+#             'sub': user_info_data.get("sub"),  # Mantener 'sub' para referencia interna
+#             "firstName": user_info_data.get("given_name"),
+#             "lastName": user_info_data.get("family_name"),
+#             "name": user_info_data.get("name"),
+#             "email": user_info_data.get("email"), 
+#             "picture": user_info_data.get("picture"),
+#             "original_response": user_info_data
+#         }
+#         return formatted_info
+
+#     elif isinstance(user_info_data, dict):
+#          logger.error(f"LinkedIn /userinfo response received, but 'sub' field is missing. Response keys: {user_info_data.keys()}")
+#          return None
+#     else:
+#         logger.error(f"Failed to fetch or parse LinkedIn user info from /userinfo. Received: {user_info_data}")
+#         return None
+    
+    
 def get_linkedin_user_info(access_token):
     """
-    Get user info from LinkedIn using the OpenID Connect /userinfo endpoint.
-    Requires 'openid', 'profile', 'email' scopes.
+    Get user info from LinkedIn using the /me endpoint with specific fields.
+    Handles the modern Community Management API structure for profile pictures.
     """
     headers = {"Authorization": f"Bearer {access_token}"}
-    # Usar el endpoint estándar /userinfo para OpenID Connect
-    userinfo_url = f"{LI_API_URL}/userinfo"
-    logger.debug(f"Calling LinkedIn UserInfo endpoint: {userinfo_url}")
+    # Se solicita únicamente la estructura 'displayImage~' que contiene las URLs.
+    params = {
+        "projection": "(id,localizedFirstName,localizedLastName,profilePicture(displayImage~:playableStreams))"
+    }
+    userinfo_url = f"{LI_API_URL}/me"
+    logger.debug(f"Calling LinkedIn /me endpoint: {userinfo_url} with params: {params}")
 
     def api_call():
-        return requests.get(userinfo_url, headers=headers)
+        return requests.get(userinfo_url, headers=headers, params=params)
 
-    user_info_data = fetch_with_retry_log(api_call, "get_linkedin_user_info (/userinfo)")
+    user_info_data = fetch_with_retry_log(api_call, "get_linkedin_user_info (/me)")
 
-    # Es crucial que user_info_data sea un diccionario y contenga 'sub'
-    if isinstance(user_info_data, dict) and 'sub' in user_info_data:
-        logger.info(f"Successfully fetched LinkedIn user info. User sub: {user_info_data.get('sub')}")
-        # Aseguramos que el campo 'id' exista mapeado desde 'sub' para consistencia interna si se usa en otro lado
-        user_info_data['id'] = user_info_data.get('sub')
-        return user_info_data
+    if isinstance(user_info_data, dict) and 'id' in user_info_data:
+        logger.info(f"Successfully fetched LinkedIn user info. User id: {user_info_data.get('id')}")
+
+        first_name = user_info_data.get("localizedFirstName", "")
+        last_name = user_info_data.get("localizedLastName", "")
+        picture_url = None
+
+        # La URL de la imagen de perfil está anidada en la nueva estructura
+        profile_picture_data = user_info_data.get("profilePicture", {}).get("displayImage~", {})
+        if profile_picture_data and "elements" in profile_picture_data and profile_picture_data["elements"]:
+            try:
+                # Obtener el identificador del último elemento (suele ser la mayor resolución)
+                picture_url = profile_picture_data["elements"][-1]["identifiers"][0]["identifier"]
+            except (KeyError, IndexError):
+                logger.warning("Could not extract profile picture URL from the new structure.")
+
+        # Crear un diccionario consistente para el frontend
+        formatted_user_info = {
+            "id": user_info_data.get("id"),
+            "sub": user_info_data.get("id"),  # Mantener 'sub' mapeado a 'id' para referencia interna
+            "firstName": first_name,
+            "lastName": last_name,
+            "name": f"{first_name} {last_name}".strip(),
+            "picture": picture_url,
+            # "original_response": user_info_data # Mantener respuesta original para depuración
+        }
+
+        return formatted_user_info
+
     elif isinstance(user_info_data, dict):
-         logger.error(f"LinkedIn /userinfo response received, but 'sub' field is missing. Response keys: {user_info_data.keys()}")
+         logger.error(f"LinkedIn /me response received, but 'id' field is missing. Response keys: {user_info_data.keys()}")
          return None
     else:
-        logger.error(f"Failed to fetch or parse LinkedIn user info from /userinfo. Received: {user_info_data}")
+        logger.error(f"Failed to fetch or parse LinkedIn user info from /me. Received: {user_info_data}")
         return None
+
 
 
 def get_linkedin_organizations(access_token):
@@ -95,7 +169,6 @@ def get_linkedin_organizations(access_token):
     }
     params = {
         "q": "roleAssignee",
-        # "role": "ADMINISTRATOR",
         "state": "APPROVED",
         "count": 50
     }
@@ -111,33 +184,30 @@ def get_linkedin_organizations(access_token):
         logger.info(f"Found {len(acl_data['elements'])} potential organization ACLs.")
         for element in acl_data['elements']:
             org_urn = element.get('organization')
-            logger.debug(f"Processing potential Organization ACL for URN: {org_urn}")
             role_in_acl = element.get('role')
             state_in_acl = element.get('state')
-            logger.debug(f"Role in ACL: {role_in_acl}, State in ACL: {state_in_acl}, URN: {org_urn}")
 
             if org_urn and role_in_acl in ["ADMINISTRATOR", "ANALYST"] and state_in_acl == "APPROVED":
                 logger.debug(f"ADMIN/APPROVED role found for URN: {org_urn}. Fetching details...")
                 org_info = get_linkedin_organization_details(org_urn, access_token)
                 if org_info and isinstance(org_info, dict):
-                    org_id_from_details = org_info.get("id", org_urn.split(':')[-1]) # Usar ID numérico o extraer del URN
-                    org_name = org_info.get("localizedName", f"Org {org_id_from_details}") # Nombre o fallback
-                    logo_data = org_info.get("logoV2", {}) # Puede ser complejo, pasarlo tal cual
+                    org_id_from_details = org_info.get("id", org_urn.split(':')[-1])
+                    org_name = org_info.get("localizedName", f"Org {org_id_from_details}")
+                    industries = org_info.get("industries", [])
 
-                    # *** Asegurar estructura consistente para el frontend ***
                     organizations.append({
                         "urn": org_urn,
-                        "id": org_id_from_details, # ID numérico o extraído
+                        "id": org_id_from_details,
                         "name": org_name,
-                        "logo": logo_data, # Pasar datos del logo si existen
                         "platform": "LinkedIn",
-                        "type": "organization"
+                        "type": "organization",
+                        "defaultLocale": org_info.get("defaultLocale"),
+                        "vanityName": org_info.get("vanityName"),
+                        "localizedSpecialties": org_info.get("localizedSpecialties"),
+                        "industries": [get_industry_info(industry_id, access_token) for industry_id in industries],
+                        "primaryOrganizationType": org_info.get("primaryOrganizationType"),
+                        "versionTag": org_info.get("versionTag")
                     })
-                    logger.info(f"Successfully added organization: {org_name} (URN: {org_urn})")
-                else:
-                     logger.warning(f"Could not get details for org URN: {org_urn}. Skipping.")
-            else:
-                logger.debug(f"Skipping ACL element (not ADMIN/APPROVED or missing URN): {element}")
     elif isinstance(acl_data, requests.Response): # Chequear si fetch_with_retry_log devolvió un error
          logger.error(f"Failed to get LinkedIn organization ACLs. Status: {acl_data.status_code}, Body: {acl_data.text[:200]}")
     elif isinstance(acl_data, dict):
@@ -149,8 +219,41 @@ def get_linkedin_organizations(access_token):
     logger.info(f"Processed LinkedIn organizations. Found {len(organizations)} valid admin roles with details.")
     return organizations
 
+def get_industry_info(industry_id, access_token):
+    """
+    Retrieves information about a LinkedIn industry by its ID.
+    Reference: https://docs.microsoft.com/en-us/linkedin/shared/references/v2/industry/industry?context=linkedin/share/v2/industry/industry
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202311"
+    }
+    # params = {
+    #     "locale.language": "en",
+    #     "locale.country": "US"
+    # }
+    
+    params = {}
+    
+    industry_id = int(industry_id.split(":")[-1])
+    industry_url_endpoint = f"https://api.linkedin.com/v2/industries/{industry_id}"
+    
+    logger.debug(f"Calling LinkedIn Industry endpoint: {industry_url_endpoint} with params: {params}")
 
+    def api_call():
+        return requests.get(industry_url_endpoint, headers=headers, params=params)
 
+    industry_info_data = fetch_with_retry_log(api_call, f"get_industry_info (ID: {industry_id})")
+
+    if isinstance(industry_info_data, dict):
+        logger.info(f"Successfully fetched industry info for ID {industry_id}.")
+        return industry_info_data.get("name", None).get("localized", {}).get("en_US", None) # Devolver el nombre de la industria si existe
+    elif isinstance(industry_info_data, requests.Response):
+        logger.error(f"Failed to get industry info for ID {industry_id}. Status: {industry_info_data.status_code}, Body: {industry_info_data.text[:200]}")
+    else:
+        logger.warning(f"LinkedIn industry info response structure unexpected or empty: {industry_info_data.keys() if isinstance(industry_info_data, dict) else None}")
+        
+        
 def get_linkedin_asset_url(asset_urn, access_token):
     """
     Retrieves the public download URL for a LinkedIn digital media asset URN.
@@ -220,13 +323,11 @@ def get_linkedin_asset_url(asset_urn, access_token):
          return None
 
 
-
 def get_linkedin_organization_details(org_urn, access_token):
     """
     Get details (like name, logo URL) of an organization by its URN.
     Extracts numeric ID, calls API, and attempts to resolve logo asset URN to a URL.
     """
-    # ... (código existente para extraer numeric_org_id y llamar a /organizations/{id}) ...
     headers = {
         "Authorization": f"Bearer {access_token}",
         "LinkedIn-Version": "202311"
@@ -246,7 +347,9 @@ def get_linkedin_organization_details(org_urn, access_token):
         return None
 
     details_url = f"{LI_API_URL}/organizations/{numeric_org_id}"
-    params = {"fields": "id,localizedName,logoV2"} # Pedir el logoV2 que contiene el asset URN
+    params = {
+        "fields": "vanityName,localizedName,versionTag,defaultLocale,specialties,parentRelationship,localizedSpecialties,industries,name,primaryOrganizationType,id,localizedWebsite"
+    }
 
     logger.debug(f"Calling LinkedIn Organization Details endpoint: {details_url} with params: {params}")
 
@@ -259,7 +362,7 @@ def get_linkedin_organization_details(org_urn, access_token):
         if isinstance(details, dict):
              logger.debug(f"Details received successfully for Org ID {numeric_org_id} (URN: {org_urn}): Keys={details.keys()}")
              details['urn'] = org_urn # Asegurar que el URN original esté presente
-
+            
              return details # Devolver detalles (con o sin 'logo_url')
 
         elif isinstance(details, requests.Response):
@@ -273,110 +376,46 @@ def get_linkedin_organization_details(org_urn, access_token):
          return None
 
 
-
-def get_linkedin_page_insights(org_urn, access_token, start_ts_ms, end_ts_ms):
+def get_linkedin_posts(access_token, target_urn: str, count: int = 10, start: int = 0):
     """
-    Extract insights from a LinkedIn organization page.
-    NOTE: Attempts simplified calls if standard ones fail due to permissions.
+    Recupera los posts (UGC) de un autor específico (usuario u organización).
+    Requiere el scope 'r_organization_social' para páginas y 'r_member_social' para perfiles.
+    
+    :param target_urn: El URN del autor (ej. 'urn:li:person:XXXX' o 'urn:li:organization:YYYY').
+    :param count: Número de posts a recuperar (máx. 100).
+    :param start: Punto de inicio para la paginación.
+    :param kwargs: Contiene el 'access_token' inyectado por el decorador.
+    :return: Una lista de posts o None si hay un error.
     """
-    if not org_urn or not isinstance(org_urn, str) or not org_urn.startswith("urn:li:organization:"):
-        logger.error(f"Invalid URN provided to get_linkedin_page_insights. Expected 'urn:li:organization:...', got: {org_urn}")
-        return None
-
-    logger.info(f"Fetching LinkedIn page insights for valid organization URN: {org_urn}")
-
+    
     headers = {
         "Authorization": f"Bearer {access_token}",
-        "LinkedIn-Version": "202311",
         "X-Restli-Protocol-Version": "2.0.0"
     }
-    results = {'followers': None, 'views': None}
-    logger.debug(f"Fetching LinkedIn ORG insights for {org_urn} from {start_ts_ms} to {end_ts_ms}")
-
-    # --- Followers Statistics ---
-    # Original parameters that caused 403
-    # params_followers_orig = {
-    #     "q": "organizationalEntity",
-    #     "organizationalEntity": org_urn,
-    #     "timeIntervals.timeGranularityType": "DAY",
-    #     "timeIntervals.timeRange.start": start_ts_ms,
-    #     "timeIntervals.timeRange.end": end_ts_ms
-    # }
-    # *** SIMPLIFIED Call Attempt ***
-    # Try without timeIntervals first, as the error mentioned them
-    params_followers_simple = {
-        "q": "organizationalEntity",
-        "organizationalEntity": org_urn,
-        # Removed timeIntervals
+    
+    params = {
+        "author": target_urn,
+        "q": "author",
+        "count": count,
+        "start": start
     }
-    follower_stats_url = f"{LI_API_URL}/organizationalEntityFollowerStatistics"
+    
+    posts_url = f"{LI_API_URL}/posts"
+    logger.debug(f"Calling LinkedIn /posts endpoint: {posts_url} with params: {params}")
 
-    def call_followers_simple():
-        logger.debug(f"Calling follower stats (SIMPLE): URL={follower_stats_url}, Params={params_followers_simple}")
-        return requests.get(follower_stats_url, headers=headers, params=params_followers_simple)
+    def api_call():
+        return requests.get(posts_url, headers=headers, params=params)
 
-    try:
-        follower_data = fetch_with_retry_log(call_followers_simple, f"get_linkedin_followers (SIMPLE) (URN: {org_urn})")
-        if isinstance(follower_data, dict):
-            logger.warning(f"Follower stats (SIMPLE) received successfully, but may not contain all expected data. Check keys: {follower_data.keys()}")
-            logger.warning(f"FOLLOWER_DATA: {follower_data}")
-            results['followers'] = follower_data
-            logger.info(f"Follower stats (SIMPLE) received successfully.")
-            
-        # Check specific error code - if it's 403, log permission issue
-        elif isinstance(follower_data, requests.Response) and follower_data.status_code == 403:
-             logger.error(f"Permission error (403) getting follower stats (SIMPLE) for {org_urn}. Check OAuth scopes/App Products. Body: {follower_data.text[:200]}")
-        elif isinstance(follower_data, requests.Response): # Log other HTTP errors
-             logger.error(f"Failed to get follower stats (SIMPLE) for {org_urn}. Status: {follower_data.status_code}, Body: {follower_data.text[:200]}")
-        else: # None u otro tipo
-             logger.warning(f"No valid follower stats data received (SIMPLE) for {org_urn}. Received type: {type(follower_data)}")
-    except Exception as e: # Catch potential exceptions from fetch_with_retry_log itself if it raises
-        logger.exception(f"Unexpected error fetching LinkedIn followers stats (SIMPLE) for {org_urn}")
-        results['followers'] = None
+    posts_data = fetch_with_retry_log(api_call, f"get_linkedin_posts (URN: {target_urn})")
 
-    # --- Page Statistics ---
-    # Original fields that caused 403
-    # fields_orig = "totalPageStatistics(views(allDesktopPageViews,allMobilePageViews)),totalShareStatistics(engagement,impressionCount,likeCount,commentCount,shareCount,clickCount)"
-    # *** SIMPLIFIED Call Attempt ***
-    # Try requesting only very basic fields, one by one if necessary
-    fields_simple = "allDesktopPageViews,allMobilePageViews" # Start with the most basic engagement metrics
-
-    params_views_simple = {
-        "q": "organization",
-        "organization": org_urn,
-        # "timeIntervals.timeGranularityType": "DAY", # Keep time intervals here for now
-        # "timeIntervals.timeRange.start": start_ts_ms,
-        # "timeIntervals.timeRange.end": end_ts_ms,
-    }
-    page_stats_url = f"{LI_API_URL}/organizationPageStatistics"
-
-    def call_views_simple():
-        logger.debug(f"Calling page stats (SIMPLE): URL={page_stats_url}, Params={params_views_simple}")
-        return requests.get(page_stats_url, headers=headers, params=params_views_simple)
-
-    try:
-        views_data = fetch_with_retry_log(call_views_simple, f"get_linkedin_page_views (SIMPLE) (URN: {org_urn})")
-        if isinstance(views_data, dict):
-            results['views'] = views_data
-            logger.info(f"Page stats (SIMPLE) received successfully.")
-            logger.debug(f"Page stats raw response keys: {results['views'].keys()}")
-        elif isinstance(views_data, requests.Response) and views_data.status_code == 403:
-            logger.error(f"Permission error (403) getting page stats (SIMPLE - fields: {fields_simple}) for {org_urn}. Check OAuth scopes/App Products. Body: {views_data.text[:200]}")
-        elif isinstance(views_data, requests.Response):
-             logger.error(f"Failed to get page stats (SIMPLE) for {org_urn}. Status: {views_data.status_code}, Body: {views_data.text[:200]}")
-        else:
-             logger.warning(f"No valid page stats data received (SIMPLE) for {org_urn}. Received type: {type(views_data)}")
-    except Exception as e:
-        logger.exception(f"Unexpected error fetching LinkedIn page stats (SIMPLE) for {org_urn}.")
-        results['views'] = None
-
-
-    if results['followers'] is None:
-        logger.warning(f"Follower stats (SIMPLE) for {org_urn} are None or empty. Check permissions.")
-    if results['views'] is None:
-        logger.warning(f"Page stats (SIMPLE) for {org_urn} are None or empty. Check permissions.")
-    return results
-
+    if isinstance(posts_data, dict) and 'elements' in posts_data:
+        posts = posts_data['elements']
+        logger.info(f"Se recuperaron {len(posts)} posts para el URN {target_urn}.")
+        return posts
+    else:
+        logger.error(f"No se pudieron recuperar los posts o la respuesta no tuvo el formato esperado para {target_urn}.")
+        return None
+    
 
 def post_to_linkedin_organization(target_entity_urn, access_token, text_content, link_url=None, link_title=None, link_thumbnail_url=None):
     """
@@ -384,9 +423,10 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
     Requires 'w_member_social' scope.
     """
     user_info = get_linkedin_user_info(access_token)
-    if not user_info or not user_info.get('sub'):
-        # logger.error("Could not get LinkedIn user URN (sub) needed for posting.") # Ya logueado en get_linkedin_user_info
+    if not user_info or not user_info.get('sub'):    
+        logger.error("Could not get LinkedIn user URN (sub) needed for posting.") # Ya logueado en get_linkedin_user_info
         raise Exception("Could not get LinkedIn user URN (sub) needed for posting.")
+    
     author_urn = f"urn:li:person:{user_info['sub']}"
     logger.debug(f"Posting to LinkedIn as author: {author_urn}")
 
