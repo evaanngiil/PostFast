@@ -6,7 +6,7 @@ from PIL import Image
 
 # Las importaciones de tus módulos de autenticación
 from src.core.logger import logger
-from src.supabase_auth import logout
+from src.supabase_auth import logout, get_user_profile
 try:
     from src.linkedin_auth import display_auth_status, display_account_selector
 except ImportError as e:
@@ -31,13 +31,21 @@ def get_base64_image(image_path: str) -> str:
 
 
 
-def render_sidebar() -> Dict[str, Any] | None:
+def render_sidebar(user) -> Dict[str, Any] | None:
     """
     Renders the modern, brand-aligned sidebar for AIPost.
     
     Returns:
         The dictionary of the selected account data, or None if no account is selected.
     """
+    
+    # Validamos el usuario de Supabase que nos ha pasado Dashboard.py
+    if not user or not hasattr(user, 'id'):
+        logger.error(f"render_sidebar fue llamado sin un usuario de Supabase válido. User: {user}")
+        st.warning("Error de sesión. Por favor, inicia sesión de nuevo.")
+        st.switch_page("app.py") # Redirigir al login si el usuario es inválido
+        return None
+    
     
     # Inyectamos el CSS para un diseño profesional y alineado con la marca AIPost.
     st.markdown("""
@@ -117,7 +125,6 @@ def render_sidebar() -> Dict[str, Any] | None:
             gap: 12px;
             font-size: 1.1rem;
             font-weight: 600;
-            color: var(--text-light);
             padding: 0.75rem 1rem;
             border-radius: 8px;
             margin-bottom: 0.5rem;
@@ -125,27 +132,19 @@ def render_sidebar() -> Dict[str, Any] | None:
             text-decoration: none !important; 
         }
 
-        .nav-link:hover {
-            background-color: var(--brand-charcoal);
-            color: var(--text-light);
-            text-decoration: none !important;
-        }
-
-        .nav-link:visited,
-        .nav-link:active,
-        .nav-link:focus {
-            color: var(--text-light);
-            text-decoration: none !important;
-        }
-
-        /* Asegurar que no haya subrayado en ningún estado del enlace */
+        /* Forzar el mismo color para enlaces nuevos y visitados */
         .nav-link:link,
-        .nav-link:visited,
+        .nav-link:visited {
+            color: var(--text-light) !important;
+            text-decoration: none !important;
+        }
+
         .nav-link:hover,
         .nav-link:active,
         .nav-link:focus {
+            background-color: var(--brand-charcoal);
+            color: white !important;
             text-decoration: none !important;
-            border-bottom: none !important;
         }
 
         .nav-link i {
@@ -156,6 +155,7 @@ def render_sidebar() -> Dict[str, Any] | None:
         .nav-link:hover i {
             color: white !important;
         }
+
         /* Botón de cerrar sesión */
         .stButton button {
             background: transparent !important;
@@ -190,18 +190,32 @@ def render_sidebar() -> Dict[str, Any] | None:
             st.markdown("<h3 style='text-align:center;'>AIPOST</h3>", unsafe_allow_html=True)
 
         # --- SECCIÓN DE USUARIO ---
-        user = st.session_state.get('user')
         if user:
-            logger.info(f"AQUI ESTA EL USER: dict={user.__dict__ if hasattr(user, '__dict__') else str(user)}")
-            user_name = getattr(user, 'name', 'Usuario Anónimo')
+            logger.info(f"Sidebar renderizando para user.id: {user.id}")
+            
+            # Estas llamadas ahora son seguras porque 'user' es el correcto
+            profile = get_user_profile(user.id) 
+            user_name = "Usuario"
+            user_surname = "Anónimo"
+            
+            if profile:
+                user_name = profile.get('first_name', 'Usuario')
+                user_surname = profile.get('last_name', '') # Apellido puede estar vacío
+            else:
+                # Fallback si el perfil (aún) no existe
+                logger.warning(f"Sidebar no pudo encontrar el perfil para {user.id}, usando metadata.")
+                user_name = user.user_metadata.get('first_name', 'Usuario')
+                user_surname = user.user_metadata.get('last_name', 'Anónimo')
+
             user_email = getattr(user, 'email', 'Sin email')
-            user_initials = get_user_initials(user_name)
+            full_name = f"{user_name} {user_surname}".strip()
+            user_initials = get_user_initials(full_name)
             
             st.markdown(f"""
             <div class="user-section">
                 <div class="user-avatar">{user_initials}</div>
                 <div class="user-info">
-                    <p class="user-name">{user_name}</p>
+                    <p class="user-name">{full_name}</p>
                     <p class="user-email">{user_email}</p>
                 </div>
             </div>
