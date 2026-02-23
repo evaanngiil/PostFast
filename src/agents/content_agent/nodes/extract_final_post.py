@@ -1,12 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from src.agents.content_agent.agent_state import InternalState
 from src.core.logger import logger
-from src.core.constants import FLASH_LLM, GENAI_API_KEY
+from src.core.constants import FAST_LLM, GENAI_API_KEY
 from langchain_core.runnables import RunnableConfig
 from src.agents.content_agent.callbacks import get_token_callback
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-FLASH_LLM  = ChatGoogleGenerativeAI(
+FAST_LLM  = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash-lite",
     api_key=GENAI_API_KEY,
     temperature=0.9
@@ -35,7 +35,7 @@ async def extract_final_post(state: InternalState, config: RunnableConfig) -> In
     if (token_callback := get_token_callback(config)):
         token_callback.set_current_node(node_name)
 
-    chain = prompt | FLASH_LLM
+    chain = prompt | FAST_LLM
     
     # Pasar solo los campos necesarios al LLM
     clean_post = await chain.ainvoke({

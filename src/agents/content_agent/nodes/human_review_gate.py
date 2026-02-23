@@ -1,10 +1,10 @@
 from src.agents.content_agent.agent_state import InternalState
-from src.core.constants import PRO_LLM, GENAI_API_KEY
+from src.core.constants import SMART_LLM, GENAI_API_KEY
 from src.core.logger import logger
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langgraph.errors import NodeInterrupt
 
-PRO_LLM  = ChatGoogleGenerativeAI(
+SMART_LLM  = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash-lite",
     api_key=GENAI_API_KEY,
     temperature=0.9

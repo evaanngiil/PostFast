@@ -1,12 +1,12 @@
 from langchain_core.prompts import ChatPromptTemplate
 from src.agents.content_agent.agent_state import InternalState
 from src.core.logger import logger
-from src.core.constants import PRO_LLM, GENAI_API_KEY
+from src.core.constants import SMART_LLM, GENAI_API_KEY
 from src.agents.content_agent.callbacks import get_token_callback
 from langchain_core.runnables import RunnableConfig
 from langchain_google_genai import ChatGoogleGenerativeAI
 
-PRO_LLM  = ChatGoogleGenerativeAI(
+SMART_LLM  = ChatGoogleGenerativeAI(
     model="gemini-2.0-flash-lite",
     api_key=GENAI_API_KEY,
     temperature=0.9
@@ -32,7 +32,7 @@ async def draft_post(state: InternalState, config: RunnableConfig) -> InternalSt
     if (token_callback := get_token_callback(config)):
         token_callback.set_current_node(node_name)
 
-    chain = prompt | PRO_LLM
+    chain = prompt | SMART_LLM
     
     # Pasar solo los campos necesarios al LLM
     draft = await chain.ainvoke({

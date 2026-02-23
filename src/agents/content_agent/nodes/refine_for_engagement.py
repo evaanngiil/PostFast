@@ -1,6 +1,6 @@
 from langchain_core.prompts import ChatPromptTemplate
 from src.agents.content_agent.agent_state import InternalState
-from src.core.constants import PRO_LLM
+from src.core.constants import SMART_LLM
 from src.agents.content_agent.callbacks import get_token_callback
 from langchain_core.runnables import RunnableConfig
 
@@ -55,7 +55,7 @@ async def refine_for_engagement(state: InternalState, config: RunnableConfig) ->
     if (token_callback := get_token_callback(config)):
         token_callback.set_current_node(node_name)
 
-    chain = prompt | PRO_LLM
+    chain = prompt | SMART_LLM
 
     refined = await chain.ainvoke({
         "human_feedback": state.get("human_feedback", "N/A. Mejora el engagement general."),
