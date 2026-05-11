@@ -1,12 +1,27 @@
+"""
+Módulo principal para la integración con APIs de redes sociales.
+Contiene las funciones encargadas de interactuar con plataformas como LinkedIn (y futuramente Instagram),
+gestionando la obtención de datos de usuario, organizaciones, métricas de engagement y la publicación de posts.
+Implementa una capa de retries para garantizar robustez en las peticiones de red.
+"""
 import requests
 from src.core.logger import logger
-from src.core.constants import  LI_API_URL
+from src.core.constants import  LI_API_URL, LI_API_URL_REST
 import time
 import json
 from urllib.parse import quote # Necesario para URNs
 
-# Helper fetch_with_retry_log
 def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
+    """
+    Ejecuta una llamada a una API con lógica de reintentos y registro de logs.
+
+    :param api_call_func: Función que realiza la llamada a la API (debe devolver un objeto Response de requests).
+    :param func_name: Nombre de la función o endpoint para propósitos de logging.
+    :param max_retries: Número máximo de intentos antes de fallar (por defecto 3).
+    :param delay: Segundos de espera entre cada reintento (por defecto 5).
+    :return: Los datos en formato JSON (dict) si la llamada es exitosa, o None en caso de fallo.
+    :raises HTTPError: Si se recibe un error 429 (Rate Limit) u otros errores no recuperables.
+    """
     for attempt in range(max_retries):
         try:
             response = api_call_func()
@@ -46,121 +61,121 @@ def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
 
 # --- Funciones de Instagram (Mantenidas para futuro, pero no usadas ahora) ---
 def get_instagram_insights(ig_user_id, page_access_token, start_date_str, end_date_str):
-     """Placeholder: Extract insights from an Instagram account."""
+     """
+     Obtiene las estadísticas (insights) de una cuenta de Instagram.
+     (Función no implementada completamente, mantenida para uso futuro).
+
+     :param ig_user_id: ID del usuario de Instagram.
+     :param page_access_token: Token de acceso de la página.
+     :param start_date_str: Fecha de inicio para las estadísticas (str).
+     :param end_date_str: Fecha de fin para las estadísticas (str).
+     :return: None.
+     """
      logger.warning("get_instagram_insights is a placeholder and not fully implemented/used.")
      return None
 
 def post_to_instagram(ig_user_id, page_access_token, image_url=None, video_url=None, caption=""):
-     """Placeholder: Publish an image or video on Instagram Business/Creator."""
+     """
+     Publica una imagen o video en una cuenta de Instagram Business/Creator.
+     (Función no implementada completamente, mantenida para uso futuro).
+
+     :param ig_user_id: ID del usuario de Instagram.
+     :param page_access_token: Token de acceso de la página.
+     :param image_url: URL de la imagen a publicar (opcional).
+     :param video_url: URL del video a publicar (opcional).
+     :param caption: Texto de la publicación (por defecto vacío).
+     :return: None.
+     """
      logger.warning("post_to_instagram is a placeholder and not fully implemented/used.")
      return None 
-
-
-# === LinkedIn ===
-# def get_linkedin_user_info(access_token):
-#     """
-#     Get user info from LinkedIn using the OpenID Connect /userinfo endpoint.
-#     Requires 'openid', 'profile', 'email' scopes.
-#     """
-#     headers = {"Authorization": f"Bearer {access_token}"}
-#     # Usar el endpoint estándar /userinfo para OpenID Connect
-#     userinfo_url = f"{LI_API_URL}/userinfo"
-#     logger.debug(f"Calling LinkedIn UserInfo endpoint: {userinfo_url}")
-
-#     def api_call():
-#         return requests.get(userinfo_url, headers=headers)
-
-#     user_info_data = fetch_with_retry_log(api_call, "get_linkedin_user_info (/userinfo)")
-
-#     # Es crucial que user_info_data sea un diccionario y contenga 'sub'
-#     if isinstance(user_info_data, dict) and 'sub' in user_info_data:
-    
-#         logger.info(f"Successfully fetched LinkedIn user info. User sub: {user_info_data.get('sub')}")
-
-#         # Aseguramos que el campo 'id' exista mapeado desde 'sub' para consistencia interna si se usa en otro lado
-#         logger.info(f"Formatted user info for frontend: {user_info_data}")
-        
-#         # Formatear la respuesta para que sea consistente y fácil de usar
-#         formatted_info = {
-#             "id": user_info_data.get("sub"),
-#             'sub': user_info_data.get("sub"),  # Mantener 'sub' para referencia interna
-#             "firstName": user_info_data.get("given_name"),
-#             "lastName": user_info_data.get("family_name"),
-#             "name": user_info_data.get("name"),
-#             "email": user_info_data.get("email"), 
-#             "picture": user_info_data.get("picture"),
-#             "original_response": user_info_data
-#         }
-#         return formatted_info
-
-#     elif isinstance(user_info_data, dict):
-#          logger.error(f"LinkedIn /userinfo response received, but 'sub' field is missing. Response keys: {user_info_data.keys()}")
-#          return None
-#     else:
-#         logger.error(f"Failed to fetch or parse LinkedIn user info from /userinfo. Received: {user_info_data}")
-#         return None
-    
     
 def get_linkedin_user_info(access_token):
     """
-    Get user info from LinkedIn using the /me endpoint with specific fields.
-    Handles the modern Community Management API structure for profile pictures.
+    Obtiene la información del usuario de LinkedIn usando los endpoints /me y /userinfo.
+
+    El endpoint /me devuelve id, nombre y foto de perfil pero no el email.
+    El endpoint /userinfo (requiere scopes 'openid' + 'email') devuelve sub, name, email, etc.
+    Llamamos a /me primero para la foto en alta resolución, y luego a /userinfo para el email.
+
+    :param access_token: Token OAuth de LinkedIn del usuario.
+    :return: Diccionario con la información formateada del usuario (id, nombre, email, foto, etc.) o None si falla.
     """
     headers = {"Authorization": f"Bearer {access_token}"}
-    # Se solicita únicamente la estructura 'displayImage~' que contiene las URLs.
+
+    # --- 1. Llamar a /me para datos de perfil y foto ---
     params = {
         "projection": "(id,localizedFirstName,localizedLastName,profilePicture(displayImage~:playableStreams))"
     }
-    userinfo_url = f"{LI_API_URL}/me"
-    logger.debug(f"Calling LinkedIn /me endpoint: {userinfo_url} with params: {params}")
+    me_url = f"{LI_API_URL}/me"
+    logger.debug(f"Calling LinkedIn /me endpoint: {me_url}")
 
-    def api_call():
-        return requests.get(userinfo_url, headers=headers, params=params)
+    def api_call_me():
+        return requests.get(me_url, headers=headers, params=params)
 
-    user_info_data = fetch_with_retry_log(api_call, "get_linkedin_user_info (/me)")
+    user_info_data = fetch_with_retry_log(api_call_me, "get_linkedin_user_info (/me)")
 
-    if isinstance(user_info_data, dict) and 'id' in user_info_data:
-        logger.info(f"Successfully fetched LinkedIn user info. User id: {user_info_data.get('id')}")
-
-        first_name = user_info_data.get("localizedFirstName", "")
-        last_name = user_info_data.get("localizedLastName", "")
-        picture_url = None
-
-        # La URL de la imagen de perfil está anidada en la nueva estructura
-        profile_picture_data = user_info_data.get("profilePicture", {}).get("displayImage~", {})
-        if profile_picture_data and "elements" in profile_picture_data and profile_picture_data["elements"]:
-            try:
-                # Obtener el identificador del último elemento (suele ser la mayor resolución)
-                picture_url = profile_picture_data["elements"][-1]["identifiers"][0]["identifier"]
-            except (KeyError, IndexError):
-                logger.warning("Could not extract profile picture URL from the new structure.")
-
-        # Crear un diccionario consistente para el frontend
-        formatted_user_info = {
-            "id": user_info_data.get("id"),
-            "sub": user_info_data.get("id"),  # Mantener 'sub' mapeado a 'id' para referencia interna
-            "firstName": first_name,
-            "lastName": last_name,
-            "name": f"{first_name} {last_name}".strip(),
-            "picture": picture_url,
-            # "original_response": user_info_data # Mantener respuesta original para depuración
-        }
-
-        return formatted_user_info
-
-    elif isinstance(user_info_data, dict):
-         logger.error(f"LinkedIn /me response received, but 'id' field is missing. Response keys: {user_info_data.keys()}")
-         return None
-    else:
-        logger.error(f"Failed to fetch or parse LinkedIn user info from /me. Received: {user_info_data}")
+    if not isinstance(user_info_data, dict) or 'id' not in user_info_data:
+        logger.error(f"Failed to fetch LinkedIn user info from /me. Received: {user_info_data}")
         return None
+
+    logger.info(f"Successfully fetched LinkedIn user info. User id: {user_info_data.get('id')}")
+
+    first_name = user_info_data.get("localizedFirstName", "")
+    last_name = user_info_data.get("localizedLastName", "")
+    picture_url = None
+
+    profile_picture_data = user_info_data.get("profilePicture", {}).get("displayImage~", {})
+    if profile_picture_data and "elements" in profile_picture_data and profile_picture_data["elements"]:
+        try:
+            picture_url = profile_picture_data["elements"][-1]["identifiers"][0]["identifier"]
+        except (KeyError, IndexError):
+            logger.warning("Could not extract profile picture URL from the new structure.")
+
+    formatted_user_info = {
+        "id": user_info_data.get("id"),
+        "sub": user_info_data.get("id"),
+        "firstName": first_name,
+        "lastName": last_name,
+        "name": f"{first_name} {last_name}".strip(),
+        "picture": picture_url,
+    }
+
+    # --- 2. Llamar a /userinfo para el email (OpenID Connect) ---
+    try:
+        userinfo_url = f"{LI_API_URL}/userinfo"
+        logger.debug(f"Calling LinkedIn /userinfo endpoint for email: {userinfo_url}")
+
+        def api_call_userinfo():
+            return requests.get(userinfo_url, headers=headers)
+
+        oidc_data = fetch_with_retry_log(api_call_userinfo, "get_linkedin_user_info (/userinfo)")
+        if isinstance(oidc_data, dict):
+            email = oidc_data.get("email")
+            if email:
+                formatted_user_info["email"] = email
+                logger.info(f"Email retrieved from /userinfo: {email}")
+            # También obtener foto de /userinfo como respaldo
+            if not picture_url and oidc_data.get("picture"):
+                formatted_user_info["picture"] = oidc_data["picture"]
+            # Guardar given_name y family_name para su uso posterior
+            if oidc_data.get("given_name"):
+                formatted_user_info["given_name"] = oidc_data["given_name"]
+            if oidc_data.get("family_name"):
+                formatted_user_info["family_name"] = oidc_data["family_name"]
+    except Exception as e:
+        logger.warning(f"Failed to fetch email from /userinfo (non-fatal): {e}")
+
+    return formatted_user_info
 
 
 
 def get_linkedin_organizations(access_token):
     """
-    Get LinkedIn organizations where the user has an ADMINISTRATOR or ANALYTICS role.
-    Requires 'r_organization_admin' scope.
+    Obtiene las organizaciones de LinkedIn donde el usuario tiene un rol de ADMINISTRATOR o ANALYTICS.
+    Requiere el scope 'r_organization_admin'.
+
+    :param access_token: Token OAuth de LinkedIn del usuario.
+    :return: Lista de diccionarios con la información de las organizaciones, o lista vacía si no se encuentran.
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -221,17 +236,18 @@ def get_linkedin_organizations(access_token):
 
 def get_industry_info(industry_id, access_token):
     """
-    Retrieves information about a LinkedIn industry by its ID.
-    Reference: https://docs.microsoft.com/en-us/linkedin/shared/references/v2/industry/industry?context=linkedin/share/v2/industry/industry
+    Recupera información sobre una industria de LinkedIn utilizando su ID.
+    Referencia: https://docs.microsoft.com/en-us/linkedin/shared/references/v2/industry/industry?context=linkedin/share/v2/industry/industry
+
+    :param industry_id: ID de la industria en LinkedIn (ej. 'urn:li:industry:47').
+    :param access_token: Token OAuth de LinkedIn.
+    :return: Nombre localizado de la industria (str) o None si no se encuentra.
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
         "LinkedIn-Version": "202311"
     }
-    # params = {
-    #     "locale.language": "en",
-    #     "locale.country": "US"
-    # }
+  
     
     params = {}
     
@@ -247,7 +263,11 @@ def get_industry_info(industry_id, access_token):
 
     if isinstance(industry_info_data, dict):
         logger.info(f"Successfully fetched industry info for ID {industry_id}.")
-        return industry_info_data.get("name", None).get("localized", {}).get("en_US", None) # Devolver el nombre de la industria si existe
+        # Extraemos el nombre de forma segura porque el field "name" podría ser None
+        name_data = industry_info_data.get("name")
+        if isinstance(name_data, dict):
+            return name_data.get("localized", {}).get("en_US")
+        return None
     elif isinstance(industry_info_data, requests.Response):
         logger.error(f"Failed to get industry info for ID {industry_id}. Status: {industry_info_data.status_code}, Body: {industry_info_data.text[:200]}")
     else:
@@ -256,9 +276,13 @@ def get_industry_info(industry_id, access_token):
         
 def get_linkedin_asset_url(asset_urn, access_token):
     """
-    Retrieves the public download URL for a LinkedIn digital media asset URN.
-    Reference: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/community-management/shares/vector-images-api#retrieve-a-vector-image
+    Recupera la URL pública de descarga para un URN de un asset digital de medios en LinkedIn.
+    Referencia: https://learn.microsoft.com/en-us/linkedin/marketing/integrations/community-management/shares/vector-images-api#retrieve-a-vector-image
     (Aunque la doc es para Vector, el endpoint /digitalmediaAssets/{urn} suele funcionar para otros assets)
+
+    :param asset_urn: URN del asset digital (ej. 'urn:li:digitalmediaAsset:...').
+    :param access_token: Token OAuth de LinkedIn.
+    :return: URL de descarga pública (str) o None si no se puede recuperar.
     """
     if not asset_urn or not asset_urn.startswith("urn:li:digitalmediaAsset:"):
         logger.warning(f"Invalid asset URN provided to get_linkedin_asset_url: {asset_urn}")
@@ -282,7 +306,7 @@ def get_linkedin_asset_url(asset_urn, access_token):
 
         if isinstance(asset_data, dict):
             # Buscar la URL de descarga. La estructura puede variar.
-            # Common paths: 'downloadUrl', 'privateDownloadUrl', 'elements'[0]['identifiers'][0]['identifier']
+            # Rutas comunes: 'downloadUrl', 'privateDownloadUrl', 'elements'[0]['identifiers'][0]['identifier']
             # Vamos a buscar en los lugares más probables
             download_url = None
             if 'downloadUrl' in asset_data:
@@ -325,8 +349,12 @@ def get_linkedin_asset_url(asset_urn, access_token):
 
 def get_linkedin_organization_details(org_urn, access_token):
     """
-    Get details (like name, logo URL) of an organization by its URN.
-    Extracts numeric ID, calls API, and attempts to resolve logo asset URN to a URL.
+    Obtiene los detalles (nombre, logo, etc.) de una organización de LinkedIn a partir de su URN.
+    Extrae el ID numérico, llama a la API e intenta resolver el URN del logo a una URL.
+
+    :param org_urn: URN de la organización (ej. 'urn:li:organization:12345').
+    :param access_token: Token OAuth de LinkedIn del usuario.
+    :return: Diccionario con los detalles de la organización o None si ocurre un error.
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -381,10 +409,10 @@ def get_linkedin_posts(access_token, target_urn: str, count: int = 10, start: in
     Recupera los posts (UGC) de un autor específico (usuario u organización).
     Requiere el scope 'r_organization_social' para páginas y 'r_member_social' para perfiles.
     
+    :param access_token: Token OAuth de LinkedIn del autor.
     :param target_urn: El URN del autor (ej. 'urn:li:person:XXXX' o 'urn:li:organization:YYYY').
     :param count: Número de posts a recuperar (máx. 100).
     :param start: Punto de inicio para la paginación.
-    :param kwargs: Contiene el 'access_token' inyectado por el decorador.
     :return: Una lista de posts o None si hay un error.
     """
     
@@ -417,98 +445,346 @@ def get_linkedin_posts(access_token, target_urn: str, count: int = 10, start: in
         return None
     
 
-def post_to_linkedin_organization(target_entity_urn, access_token, text_content, link_url=None, link_title=None, link_thumbnail_url=None):
+def get_linkedin_company_batch_data(access_token: str, org_urn: str, posts_count: int = 20, start: int = 0) -> dict:
     """
-    Publish content (text, optional link) to a LinkedIn entity (Profile or Organization).
-    Requires 'w_member_social' scope.
-    """
-    user_info = get_linkedin_user_info(access_token)
-    if not user_info or not user_info.get('sub'):    
-        logger.error("Could not get LinkedIn user URN (sub) needed for posting.") # Ya logueado en get_linkedin_user_info
-        raise Exception("Could not get LinkedIn user URN (sub) needed for posting.")
-    
-    author_urn = f"urn:li:person:{user_info['sub']}"
-    logger.debug(f"Posting to LinkedIn as author: {author_urn}")
+    Extrae en batch toda la informacion relevante de una empresa de LinkedIn:
+      - Detalles de la organizacion (nombre, sector, descripcion, etc.)
+      - Posts recientes publicados por la organizacion
+      - Seguidores (si el scope lo permite)
 
+    Se usa en el onboarding, la primera vez que el usuario conecta una empresa,
+    para pre-poblar la base de datos con el contexto necesario para el agente.
+
+    :param access_token: Token OAuth de LinkedIn del usuario.
+    :param org_urn:      URN de la organizacion (ej. 'urn:li:organization:12345').
+    :param posts_count:  Numero de posts recientes a recuperar (default 20).
+    :param start:        Offset de paginacion (default 0).
+    :return: Dict con claves 'organization', 'posts', 'follower_count'.
+             Cada clave puede ser None si la llamada falla.
+    """
+    logger.info(f"[company_batch] Iniciando extraccion batch para {org_urn}")
+
+    result = {
+        "org_urn": org_urn,
+        "organization": None,
+        "posts": None,
+        "follower_count": None,
+    }
+
+    # 1. Detalles de la organizacion
+    try:
+        org_details = get_linkedin_organization_details(org_urn, access_token)
+        result["organization"] = org_details
+        logger.info(f"[company_batch] Detalles de organizacion recuperados para {org_urn}")
+    except Exception as e:
+        logger.error(f"[company_batch] Error recuperando detalles de organizacion {org_urn}: {e}")
+
+    # 2. Posts recientes de la organizacion
+    try:
+        posts = get_linkedin_posts(access_token, target_urn=org_urn, count=posts_count, start=start)
+        result["posts"] = posts or []
+        logger.info(f"[company_batch] {len(result['posts'])} posts recuperados para {org_urn}")
+    except Exception as e:
+        logger.error(f"[company_batch] Error recuperando posts para {org_urn}: {e}")
+        result["posts"] = []
+
+    # 3. Numero de seguidores (endpoint /networkSizes, scope r_organization_followers)
+    try:
+        follower_count = get_linkedin_organization_follower_count(org_urn, access_token)
+        result["follower_count"] = follower_count
+        logger.info(f"[company_batch] Seguidores para {org_urn}: {follower_count}")
+    except Exception as e:
+        logger.warning(f"[company_batch] No se pudo obtener el conteo de seguidores para {org_urn}: {e}")
+
+    logger.info(f"[company_batch] Extraccion batch completada para {org_urn}")
+    return result
+
+
+def get_linkedin_organization_follower_count(org_urn: str, access_token: str) -> int | None:
+    """
+    Obtiene el numero de seguidores de una organizacion de LinkedIn.
+    Requiere el scope 'r_organization_followers'.
+
+    :param org_urn:      URN de la organizacion (ej. 'urn:li:organization:12345').
+    :param access_token: Token OAuth del usuario con acceso admin.
+    :return: Numero entero de seguidores o None si falla.
+    """
     headers = {
         "Authorization": f"Bearer {access_token}",
         "LinkedIn-Version": "202311",
         "X-Restli-Protocol-Version": "2.0.0",
-        "Content-Type": "application/json"
     }
+    # El endpoint networkSizes requiere el URN codificado como parametro
+    encoded_urn = quote(org_urn)
+    url = f"{LI_API_URL}/networkSizes/{encoded_urn}?edgeType=CompanyFollowedByMember"
 
-    share_content = {
-        "shareCommentary": {"text": text_content},
-        "shareMediaCategory": "NONE"
-    }
-    if link_url:
-        share_content["shareMediaCategory"] = "ARTICLE"
-        article_content = {"originalUrl": link_url}
-        if link_title: article_content["title"] = {"text": link_title}
-        if link_thumbnail_url: article_content["thumbnails"] = [{"url": link_thumbnail_url}]
-        share_content["media"] = [{"status": "READY", **article_content}]
+    def api_call():
+        return requests.get(url, headers=headers)
 
-    post_body = {
-        "author": author_urn,
-        "lifecycleState": "PUBLISHED",
-        "specificContent": {
-            "com.linkedin.ugc.ShareContent": share_content
-        },
-        "visibility": {
-            "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
-        }
-    }
+    try:
+        data = fetch_with_retry_log(api_call, f"get_organization_follower_count ({org_urn})")
+        if isinstance(data, dict):
+            count = data.get("firstDegreeSize")
+            logger.debug(f"Follower count for {org_urn}: {count}")
+            return count
+        logger.warning(f"Respuesta inesperada al obtener seguidores de {org_urn}: {data}")
+        return None
+    except Exception as e:
+        logger.error(f"Error obteniendo seguidores de {org_urn}: {e}")
+        return None
 
+
+def post_to_linkedin_organization(target_entity_urn, access_token, text_content, link_url=None, link_title=None, link_thumbnail_url=None):
+    """
+    Publica contenido (texto, enlace opcional) en una entidad de LinkedIn (Perfil u Organización).
+    Utiliza la API moderna de posts de LinkedIn (/rest/posts).
+
+    :param target_entity_urn: URN de la entidad de destino (perfil u organización).
+    :param access_token: Token OAuth de LinkedIn del autor.
+    :param text_content: Contenido de texto principal de la publicación.
+    :param link_url: URL de un artículo o enlace a adjuntar (opcional).
+    :param link_title: Título del enlace adjunto (opcional).
+    :param link_thumbnail_url: URL de la miniatura del enlace (opcional).
+    :return: Diccionario con el 'id' (URN) de la publicación creada.
+    :raises HTTPError: Si la petición a LinkedIn falla.
+    """
     is_organization_post = False
     if target_entity_urn and isinstance(target_entity_urn, str) and target_entity_urn.startswith("urn:li:organization:"):
         is_organization_post = True
-        post_body["containerEntity"] = target_entity_urn
+        # Seteamos el URN directamente como autor si es una publicación de organización
+        author_urn = target_entity_urn
         logger.info(f"Preparing post to LinkedIn Organization: {target_entity_urn}")
     elif target_entity_urn and isinstance(target_entity_urn, str) and target_entity_urn.startswith("urn:li:person:"):
-         if target_entity_urn == author_urn:
-              logger.info("Preparing post to LinkedIn User's own profile.")
-         else:
-              logger.error(f"Attempting to post to another person's profile ({target_entity_urn}) which is likely not supported.")
-              raise ValueError("Posting to another user's profile is not supported via API.")
+        # Para perfiles personales, el URN del target se usa directamente como autor
+        author_urn = target_entity_urn
+        logger.info(f"Preparing post to LinkedIn User profile: {target_entity_urn}")
     else:
-         logger.error(f"Invalid or missing target_entity_urn for LinkedIn post: {target_entity_urn}")
-         raise ValueError("Invalid target URN for LinkedIn post.")
+        # Fallback: fetcheamos el user_info si el target URN es ambiguo o falta
+        user_info = get_linkedin_user_info(access_token)
+        if not user_info or not user_info.get('sub'):
+            logger.error("Could not get LinkedIn user URN (sub) needed for posting.")
+            raise Exception("Could not get LinkedIn user URN (sub) needed for posting.")
+        author_urn = f"urn:li:person:{user_info['sub']}"
+        logger.info(f"Posting to LinkedIn as fallback author: {author_urn}")
 
+    logger.debug(f"Posting to LinkedIn as author: {author_urn}")
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202601",
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json"
+    }
+
+    # Construimos el payload con la estructura requerida por la API moderna de posts
+    post_body = {
+        "author": author_urn,
+        "commentary": text_content,
+        "visibility": "PUBLIC",
+        "distribution": {
+            "feedDistribution": "MAIN_FEED",
+            "targetEntities": [],
+            "thirdPartyDistributionChannels": []
+        },
+        "lifecycleState": "PUBLISHED"
+    }
+
+    # Si viene un link_url, lo empaquetamos como un artículo adjunto en el payload
+    if link_url:
+        article = {"source": link_url}
+        if link_title:
+            article["title"] = link_title
+        if link_thumbnail_url:
+            article["thumbnail"] = link_thumbnail_url
+        post_body["content"] = {
+            "article": article
+        }
 
     logger.debug(f"LinkedIn post body: {json.dumps(post_body, indent=2)}")
-    post_url = f"{LI_API_URL}/ugcPosts"
+    # Hacemos el request al endpoint moderno /rest/posts
+    post_url = f"{LI_API_URL_REST}/posts"
 
     def api_call():
         return requests.post(post_url, headers=headers, json=post_body)
 
     try:
-        # fetch_with_retry_log devolverá el objeto Response en caso de éxito (201) o fallo HTTP
-        response_obj = fetch_with_retry_log(api_call, f"post_to_linkedin ({'Org' if is_organization_post else 'Profile'}) (Target: {target_entity_urn})")
+        response = requests.post(post_url, headers=headers, json=post_body)
+        response.raise_for_status()  # Lanza excepción si 4xx/5xx
 
-        if isinstance(response_obj, requests.Response):
-             post_id_urn = response_obj.headers.get('x-restli-id') or response_obj.headers.get('X-RestLi-Id')
-             if response_obj.status_code == 201 and post_id_urn:
-                 logger.info(f"Successfully posted to LinkedIn. Post URN: {post_id_urn}")
-                 return {"id": post_id_urn}
-             else:
-                 # Error HTTP (cliente o servidor) o éxito sin ID esperado
-                 logger.error(f"LinkedIn post attempt failed or succeeded unexpectedly. Status: {response_obj.status_code}, Headers: {response_obj.headers}, Response: {response_obj.text[:200]}")
-                 # Generar una excepción para que la tarea Celery falle o reintente
-                 response_obj.raise_for_status() # Esto lanzará HTTPError si status >= 400
-                 # Si el status es < 400 pero falta el ID, lanzar un error genérico
-                 if not post_id_urn:
-                    raise Exception(f"LinkedIn post succeeded (status {response_obj.status_code}) but missing ID header.")
-                 # Si llegamos aquí, algo muy raro pasó (e.g., status 200 OK?)
-                 raise Exception(f"Unexpected status code {response_obj.status_code} after LinkedIn post.")
-        elif response_obj is None:
-             # Fallo de conexión o JSON después de reintentos
-             logger.error("LinkedIn post failed after retries (connection or parsing error).")
-             raise Exception("LinkedIn post failed after retries (connection or parsing error).")
-        else:
-             # Tipo inesperado devuelto por fetch_with_retry_log
-             logger.error(f"LinkedIn post failed. Fetcher returned unexpected type: {type(response_obj)}")
-             raise Exception("LinkedIn post failed (unexpected response from API call handler).")
+        # LinkedIn Posts API devuelve 201 con body vacío.
+        # El URN del post va en el header 'x-restli-id'.
+        post_id_urn = (
+            response.headers.get("x-restli-id")
+            or response.headers.get("X-RestLi-Id")
+        )
 
+        # Intentar parsear body por si acaso hay respuesta JSON
+        if not post_id_urn:
+            try:
+                body = response.json()
+                post_id_urn = body.get("id") or body.get("urn")
+            except Exception:
+                pass  # Body vacío es esperado con 201
+
+        logger.info(f"Successfully posted to LinkedIn. Post URN: {post_id_urn}")
+        return {"id": post_id_urn}
+        
+    except requests.exceptions.HTTPError as e:
+        error_str = e.response.text[:300] if e.response else str(e)
+        logger.error(f"HTTPError posting to LinkedIn ({target_entity_urn}): {e.response.status_code} - {error_str}")
+        raise
     except Exception as e:
-         logger.exception(f"Exception during LinkedIn post processing for {target_entity_urn}")
-         raise e # Re-lanzar para que Celery maneje el reintento/fallo
+        logger.exception(f"Exception during LinkedIn post processing for {target_entity_urn}")
+        raise
+
+
+def get_organization_share_statistics(org_urn, access_token, share_urns=None, start_timestamp=None, end_timestamp=None):
+    """
+    Recupera las estadísticas de compartición de las publicaciones de una organización.
+    Endpoint: GET /organizationalEntityShareStatistics
+    Scope: r_organization_social
+    
+    :param org_urn: URN de la organización (ej. 'urn:li:organization:12345').
+    :param access_token: Token OAuth de LinkedIn.
+    :param share_urns: Lista opcional de URNs de compartición específicos para filtrar (máx. 20 por lote).
+    :param start_timestamp: Marca de tiempo de inicio opcional (ms) para estadísticas limitadas en el tiempo.
+    :param end_timestamp: Marca de tiempo de fin opcional (ms) para estadísticas limitadas en el tiempo.
+    :return: Lista de diccionarios con estadísticas de compartición (impresiones, clics, likes, comentarios, shares por post).
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202401",
+        "X-Restli-Protocol-Version": "2.0.0"
+    }
+    
+    params = {
+        "q": "organizationalEntity",
+        "organizationalEntity": org_urn
+    }
+    
+    if share_urns:
+        for i, urn in enumerate(share_urns[:20]):
+            params[f"shares[{i}]"] = urn
+    
+    if start_timestamp:
+        params["timeIntervals.timeGranularityType"] = "DAY"
+        params["timeIntervals.timeRange.start"] = start_timestamp
+    if end_timestamp:
+        params["timeIntervals.timeRange.end"] = end_timestamp
+    
+    url = f"{LI_API_URL}/organizationalEntityShareStatistics"
+    logger.debug(f"Fetching share statistics for {org_urn}: {url}")
+    
+    def api_call():
+        return requests.get(url, headers=headers, params=params)
+    
+    try:
+        data = fetch_with_retry_log(api_call, f"get_org_share_statistics ({org_urn})")
+        if isinstance(data, dict):
+            elements = data.get("elements", [])
+            logger.info(f"Fetched share statistics for {org_urn}: {len(elements)} elements")
+            return elements
+        else:
+            logger.warning(f"Unexpected response type for share statistics: {type(data)}")
+            return []
+    except Exception as e:
+        logger.error(f"Error fetching share statistics for {org_urn}: {e}")
+        return []
+
+
+def get_organization_page_statistics(org_urn, access_token, start_timestamp=None, end_timestamp=None):
+    """
+    Recupera estadísticas de la página de una organización (vistas, visitantes, datos demográficos).
+    Endpoint: GET /organizationPageStatistics
+    Scope: r_organization_social
+    
+    :param org_urn: URN de la organización.
+    :param access_token: Token OAuth de LinkedIn.
+    :param start_timestamp: Marca de tiempo de inicio opcional (ms).
+    :param end_timestamp: Marca de tiempo de fin opcional (ms).
+    :return: Lista de diccionarios con vistas de página, visitantes únicos y demografía de visitantes.
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202401",
+        "X-Restli-Protocol-Version": "2.0.0"
+    }
+    
+    params = {
+        "q": "organization",
+        "organization": org_urn
+    }
+    
+    if start_timestamp:
+        params["timeIntervals.timeGranularityType"] = "DAY"
+        params["timeIntervals.timeRange.start"] = start_timestamp
+    if end_timestamp:
+        params["timeIntervals.timeRange.end"] = end_timestamp
+    
+    url = f"{LI_API_URL}/organizationPageStatistics"
+    logger.debug(f"Fetching page statistics for {org_urn}: {url}")
+    
+    def api_call():
+        return requests.get(url, headers=headers, params=params)
+    
+    try:
+        data = fetch_with_retry_log(api_call, f"get_org_page_statistics ({org_urn})")
+        if isinstance(data, dict):
+            elements = data.get("elements", [])
+            logger.info(f"Fetched page statistics for {org_urn}: {len(elements)} elements")
+            return elements
+        else:
+            logger.warning(f"Unexpected response type for page statistics: {type(data)}")
+            return []
+    except Exception as e:
+        logger.error(f"Error fetching page statistics for {org_urn}: {e}")
+        return []
+
+
+def get_organization_follower_statistics(org_urn, access_token, start_timestamp=None, end_timestamp=None):
+    """
+    Recupera estadísticas de seguidores de una organización (crecimiento, datos demográficos).
+    Endpoint: GET /organizationalEntityFollowerStatistics
+    Scope: r_organization_social
+    
+    :param org_urn: URN de la organización.
+    :param access_token: Token OAuth de LinkedIn.
+    :param start_timestamp: Marca de tiempo de inicio opcional (ms).
+    :param end_timestamp: Marca de tiempo de fin opcional (ms).
+    :return: Lista de diccionarios con el conteo de seguidores a lo largo del tiempo y demografía.
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "LinkedIn-Version": "202401",
+        "X-Restli-Protocol-Version": "2.0.0"
+    }
+    
+    params = {
+        "q": "organizationalEntity",
+        "organizationalEntity": org_urn
+    }
+    
+    if start_timestamp:
+        params["timeIntervals.timeGranularityType"] = "DAY"
+        params["timeIntervals.timeRange.start"] = start_timestamp
+    if end_timestamp:
+        params["timeIntervals.timeRange.end"] = end_timestamp
+    
+    url = f"{LI_API_URL}/organizationalEntityFollowerStatistics"
+    logger.debug(f"Fetching follower statistics for {org_urn}: {url}")
+    
+    def api_call():
+        return requests.get(url, headers=headers, params=params)
+    
+    try:
+        data = fetch_with_retry_log(api_call, f"get_org_follower_statistics ({org_urn})")
+        if isinstance(data, dict):
+            elements = data.get("elements", [])
+            logger.info(f"Fetched follower statistics for {org_urn}: {len(elements)} elements")
+            return elements
+        else:
+            logger.warning(f"Unexpected response type for follower statistics: {type(data)}")
+            return []
+    except Exception as e:
+        logger.error(f"Error fetching follower statistics for {org_urn}: {e}")
+        return []
