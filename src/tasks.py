@@ -80,8 +80,8 @@ def publish_post_task(self, platform, account_id, access_token, content, **kwarg
                 # Registramos como publicado en BD y NO relanzamos el error.
                 if "422" in error_str and "duplicate" in error_str.lower():
                     logger.warning(
-                        f"[Task ID: {self.request.id}] LinkedIn reporto duplicado (422) para "
-                        f"{account_id}. El post ya estaba publicado. Marcando como publicado en BD."
+                        f"[Task ID: {self.request.id}] LinkedIn reported duplicate (422) for "
+                        f"{account_id}. Post was already published. Marking as published in DB."
                     )
                     create_post(
                         content=content,
