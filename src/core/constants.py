@@ -1,27 +1,11 @@
 import os
 from dotenv import load_dotenv
 
-# Load environment variables
+# Carga inicial de variables de entorno (dotenv).
 load_dotenv()
 
 GENAI_API_KEY = os.getenv("GENAI_API_KEY")
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
-
-# LI_CLIENT_ID = os.getenv("LI_CLIENT_ID")
-# LI_CLIENT_SECRET = os.getenv("LI_CLIENT_SECRET")
-# LI_SCOPES =  [
-#         'r_member_postAnalytics',
-#         'r_organization_followers',
-#         'r_organization_social',
-#         'rw_organization_admin',
-#         'r_organization_social_feed',
-#         'w_member_social',
-#         'w_organization_social',
-#         'r_basicprofile',
-#         'w_organization_social_feed',
-#         'w_member_social_feed',
-#         'r_1st_connections_size'
-#     ]
 
 LI_CLIENT_ID = os.getenv("LI_CLIENT_ID")
 LI_CLIENT_SECRET = os.getenv("LI_CLIENT_SECRET")
@@ -44,9 +28,9 @@ LI_SCOPES = [
         'r_ads_leadgen_automation'
     ]
 
+
 BASE_URL = os.getenv("BASE_URL")
 if not BASE_URL:
-    # Default to local Streamlit dev server when not configured
     BASE_URL = "http://localhost:8501"
     print("WARNING: BASE_URL not set in environment. Defaulting to http://localhost:8501 (dev only).")
 
@@ -63,36 +47,60 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
 
 SECRET_KEY = os.getenv("SECRET_KEY")
 
-# API Constants 
+# Constantes de integración con APIs externas (LinkedIn).
 LI_API_URL = "https://api.linkedin.com/v2"
+LI_API_URL_REST = "https://api.linkedin.com/rest"
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    print("CRITICAL: DATABASE_URL environment variable not set.")
-
-# Supabase
+# Configuración de base de datos y auth (Supabase).
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_CONN_STRING = os.getenv("SUPABASE_CONN_STRING")
 
-# Redis
+# Configuración de caché / message broker (Redis).
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
 
-# Lazy import to avoid circular import
-def get_smart_llm(name: str = "gemini-2.0-flash"):
+# Límites diarios del free-tier (RPD):
+#   gemini-2.5-flash         20 RPD  
+#   gemini-2.5-flash-lite    20 RPD 
+#   gemini-3-flash           20 RPD 
+#   gemini-3.1-flash-lite-preview   500 RPD
+#   gemini-2.5-pro            0 RPD  
+
+# Helpers de importación diferida (lazy load) para compatibilidad con LLMFactory.
+def get_smart_llm(name: str = "gemini-2.5-flash"):
+    """
+    Instancia el LLM configurado para tareas complejas vía lazy import.
+
+    :param name: Nombre del modelo LLM a inicializar.
+    :returns: Objeto del modelo instanciado.
+    """
     from src.agents.utils.llm_factory import LLMFactory
     return LLMFactory.get_llm(llm_name=name)
 
-def get_fast_llm(name: str = "gemini-2.0-flash-lite"):
+def get_fast_llm(name: str = "gemini-3.1-flash-lite-preview"):
+    """
+    Instancia el LLM configurado para tareas rápidas y triviales vía lazy import.
+
+    :param name: Nombre del modelo LLM a inicializar.
+    :returns: Objeto del modelo instanciado.
+    """
     from src.agents.utils.llm_factory import LLMFactory
     return LLMFactory.get_llm(llm_name=name)
 
-# SMART_LLM = get_smart_llm(name="gemini-2.5-flash-lite")
-# FAST_LLM = get_fast_llm(name="gemini-2.0-flash")
+# Modelo designado para tareas creativas o de razonamiento complejo (ej. redacción de posts).
+SMART_LLM = "gemini-flash-latest"
 
-SMART_LLM = "gemini-2.5-flash-lite"
-FAST_LLM = "gemini-2.0-flash"
+# Modelo designado para tareas deterministas o de alta frecuencia (ej. parsers, formato JSON).
+MEDIUM_LLM = "gemini-3.1-flash-lite-preview"
+
+# Modelo designado para procesamiento batch de análisis de posts.
+ANALYSIS_LLM = "gemini-3.1-flash-lite-preview"
+
+# Modelo designado para tareas de complejidad media (ej. web scraping, brainstroming).
+FAST_LLM = "gemini-3.1-flash-lite-preview"
+
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")

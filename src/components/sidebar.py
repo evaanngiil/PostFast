@@ -1,20 +1,25 @@
 import base64
 from io import BytesIO
 import streamlit as st
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from PIL import Image
 
-# Las importaciones de tus módulos de autenticación
 from src.core.logger import logger
-from src.supabase_auth import logout, get_user_profile
+from src.supabase_auth import logout, get_user_profile, get_user_organizations, set_active_organization, update_profile_email, get_active_organization, update_org_urn
+
 try:
-    from src.linkedin_auth import display_auth_status, display_account_selector
+    from src.linkedin_auth import display_auth_status
 except ImportError as e:
     st.error(f"Fatal Import Error (auth): {e}")
     st.stop()
 
 def get_user_initials(name: str) -> str:
-    """Genera iniciales a partir de un nombre."""
+    """
+    Extrae y genera iniciales a partir de un nombre completo.
+
+    :param name: Nombre del usuario en formato texto.
+    :returns: String con las iniciales (máximo 2 caracteres) o un emoji por defecto.
+    """
     if not name:
         return "👤"
     parts = name.split()
@@ -23,7 +28,12 @@ def get_user_initials(name: str) -> str:
     return parts[0][0].upper()
 
 def get_base64_image(image_path: str) -> str:
-    """Convierte una imagen a una cadena base64."""
+    """
+    Lee un asset del disco y lo codifica en base64 para inyección inline.
+
+    :param image_path: Ruta del sistema al archivo de imagen.
+    :returns: String codificado en base64 listo para usar en HTML.
+    """
     with Image.open(image_path) as img:
         buffered = BytesIO()
         img.save(buffered, format="PNG")
@@ -33,27 +43,27 @@ def get_base64_image(image_path: str) -> str:
 
 def render_sidebar(user) -> Dict[str, Any] | None:
     """
-    Renders the modern, brand-aligned sidebar for AIPost.
-    
-    Returns:
-        The dictionary of the selected account data, or None if no account is selected.
+    Renderiza la barra lateral principal de navegación y selección de contexto.
+
+    :param user: Objeto de usuario autenticado de Supabase.
+    :returns: Un diccionario con el estado de la cuenta seleccionada o None si es inválido.
     """
     
     # Validamos el usuario de Supabase que nos ha pasado Dashboard.py
     if not user or not hasattr(user, 'id'):
         logger.error(f"render_sidebar fue llamado sin un usuario de Supabase válido. User: {user}")
         st.warning("Error de sesión. Por favor, inicia sesión de nuevo.")
-        st.switch_page("app.py") # Redirigir al login si el usuario es inválido
+    # Fallback de seguridad en caso de que el payload del usuario esté corrupto.
+        st.switch_page("app.py")
         return None
     
     
-    # Inyectamos el CSS para un diseño profesional y alineado con la marca AIPost.
     st.markdown("""
     <style>
-        /* Importar la fuente de íconos de Bootstrap */
+        /* Importación de tipografía de íconos. */
         @import url("https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css");
 
-        /* Variables de color de la marca AIPost */
+        /* Sistema de tokens de color. */
         :root {
             --brand-teal: #00A99D; /* Teal del logo */
             --brand-charcoal: #00A99D;
@@ -63,7 +73,7 @@ def render_sidebar(user) -> Dict[str, Any] | None:
             --danger-red: #E53E3E;
         }
 
-        /* Estilo del contenedor principal del sidebar */
+        /* Contenedor principal. */
         [data-testid="stSidebar"] {
             background-color: var(--background-dark);
             border-right: 1px solid var(--brand-charcoal);
@@ -156,7 +166,7 @@ def render_sidebar(user) -> Dict[str, Any] | None:
             color: white !important;
         }
 
-        /* Botón de cerrar sesión */
+        /* Botón de logout. */
         .stButton button {
             background: transparent !important;
             color: var(--danger-red) !important;
@@ -189,12 +199,10 @@ def render_sidebar(user) -> Dict[str, Any] | None:
         except Exception:
             st.markdown("<h3 style='text-align:center;'>AIPOST</h3>", unsafe_allow_html=True)
 
-        # --- SECCIÓN DE USUARIO ---
         if user:
             logger.info(f"Sidebar renderizando para user.id: {user.id}")
             
-            # Estas llamadas ahora son seguras porque 'user' es el correcto
-            profile = get_user_profile(user.id) 
+            profile = get_user_profile(user.id)
             user_name = "Usuario"
             user_surname = "Anónimo"
             
@@ -202,12 +210,30 @@ def render_sidebar(user) -> Dict[str, Any] | None:
                 user_name = profile.get('first_name', 'Usuario')
                 user_surname = profile.get('last_name', '') # Apellido puede estar vacío
             else:
-                # Fallback si el perfil (aún) no existe
+                # Resolución de atributos mediante metadata en caso de que el registro de perfil falle.
                 logger.warning(f"Sidebar no pudo encontrar el perfil para {user.id}, usando metadata.")
                 user_name = user.user_metadata.get('first_name', 'Usuario')
                 user_surname = user.user_metadata.get('last_name', 'Anónimo')
 
-            user_email = getattr(user, 'email', 'Sin email')
+            # Estrategia de resolución de email priorizando fuentes verificadas.
+            def _is_real_email(e):
+                return bool(e) and '@linkedin.placeholder' not in e
+
+            raw_email = getattr(user, 'email', None)
+            profile_email = profile.get('email', '') if profile else ''
+            li_user = True if st.session_state.get('li_user_info', {}) else False
+            li_email = st.session_state.get('li_user_info', {'email': 'NO EMAIL'}).get('email', '') if li_user else 'No email'
+
+            if _is_real_email(raw_email):
+                user_email = raw_email
+            elif _is_real_email(profile_email):
+                user_email = profile_email
+            elif _is_real_email(li_email):
+                user_email = li_email
+                # Migración asíncrona del email para usuarios legacy.
+                update_profile_email(user.id, li_email)
+            else:
+                user_email = 'Sin email'
             full_name = f"{user_name} {user_surname}".strip()
             user_initials = get_user_initials(full_name)
             
@@ -220,25 +246,153 @@ def render_sidebar(user) -> Dict[str, Any] | None:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-        
-        # --- NAVEGACIÓN PRINCIPAL ---
+
+            # Selector unificado: sincroniza el state de la API de LinkedIn con la persistencia en DB para mitigar desincronizaciones del contexto global.
+            linkedin_accounts = st.session_state.get("user_accounts") or []
+            db_orgs = get_user_organizations(user.id)
+
+            # Índices de acceso en tiempo constante (O(1)) por URN y nombre de empresa.
+            urn_to_db_org: Dict[str, dict] = {}
+            name_to_db_org: Dict[str, dict] = {}
+            personal_db_org: Optional[dict] = None
+            for db_o in db_orgs:
+                if db_o.get("is_personal"):
+                    personal_db_org = db_o
+                org_urn = db_o.get("org_urn")
+                if org_urn:
+                    urn_to_db_org[org_urn] = db_o
+                cname = (db_o.get("company_name") or "").strip().lower()
+                if cname:
+                    name_to_db_org[cname] = db_o
+
+            if linkedin_accounts and st.session_state.get("li_connected"):
+                st.markdown('<div class="nav-title">Organizacion</div>', unsafe_allow_html=True)
+
+                def _format_li_account(acc):
+                    label = acc.get("name", "N/A")
+                    acc_type = acc.get("type", "profile")
+                    if acc_type == "organization":
+                        return f"{label} (Empresa)"
+                    return f"{label} (Personal)"
+
+                # Recuperar el índice activo evaluando la base de datos, ignorando
+                # el estado volátil del session_state para prevenir reseteos en soft reloads.
+                active_org_from_db = get_active_organization(user.id)
+                active_urn_from_db = (active_org_from_db or {}).get("org_urn")
+                active_name_from_db = ((active_org_from_db or {}).get("company_name") or "").strip().lower()
+                active_is_personal = (active_org_from_db or {}).get("is_personal", False)
+
+                current_idx = 0  # default: first account (personal)
+                for i, acc in enumerate(linkedin_accounts):
+                    acc_urn = acc.get("urn", "")
+                    acc_name = (acc.get("name") or "").strip().lower()
+                    acc_type = acc.get("type", "profile")
+
+                    # Búsqueda estricta por URN (identificador determinista).
+                    if active_urn_from_db and acc_urn == active_urn_from_db:
+                        current_idx = i
+                        break
+                    # Fallback de inferencia heurística por string matching.
+                    if active_name_from_db and acc_name == active_name_from_db:
+                        current_idx = i
+                        break
+                    # Fallback a cuenta de origen (perfil de usuario básico).
+                    if active_is_personal and acc_type == "profile":
+                        current_idx = i
+                        break
+
+                selected_index = st.selectbox(
+                    "Cuenta activa",
+                    options=range(len(linkedin_accounts)),
+                    format_func=lambda i: _format_li_account(linkedin_accounts[i]),
+                    index=current_idx,
+                    label_visibility="collapsed",
+                    key="unified_account_selector",
+                )
+
+                newly_selected = linkedin_accounts[selected_index]
+
+                def _find_db_org(li_acc: dict) -> Optional[dict]:
+                    """
+                    Empareja un payload abstracto de cuenta de LinkedIn con su entidad equivalente en DB.
+
+                    :param li_acc: Diccionario de la API de la red social.
+                    :returns: Registro de la organización o None si el binding falla.
+                    """
+                    urn = li_acc.get("urn", "")
+                    # Match prioritario por URN de LinkedIn.
+                    if urn and urn in urn_to_db_org:
+                        return urn_to_db_org[urn]
+                    # Match secundario normalizando el nombre empresarial.
+                    cname = (li_acc.get("name") or "").strip().lower()
+                    if cname and cname in name_to_db_org:
+                        return name_to_db_org[cname]
+                    # Handleo de perfil del usuario.
+                    if li_acc.get("type") == "profile" and personal_db_org:
+                        return personal_db_org
+                    return None
+
+                # Detección de drift entre la UI y el estado persistente.
+                newly_selected_urn = newly_selected.get("urn", "")
+
+                if active_org_from_db is None:
+                    # Cold start: inicialización forzosa en BD sin disparar ciclos infinitos de re-renderizado.
+                    matched_db = _find_db_org(newly_selected)
+                    if matched_db:
+                        set_active_organization(user.id, matched_db["id"])
+                        st.session_state["active_org"] = matched_db
+                        if newly_selected_urn and not matched_db.get("org_urn"):
+                            update_org_urn(matched_db["id"], newly_selected_urn)
+                    st.session_state.selected_account = newly_selected
+                else:
+                    db_already_matches = (
+                        (active_urn_from_db and newly_selected_urn == active_urn_from_db)
+                        or (
+                            not active_urn_from_db
+                            and active_name_from_db
+                            and (newly_selected.get("name") or "").strip().lower() == active_name_from_db
+                        )
+                        or (
+                            active_is_personal
+                            and newly_selected.get("type") == "profile"
+                        )
+                    )
+
+                    if not db_already_matches:
+                        # El usuario alteró explícitamente el select dropdown: sincronizar payload a la BD.
+                        matched_db = _find_db_org(newly_selected)
+                        if matched_db:
+                            set_active_organization(user.id, matched_db["id"])
+                            st.session_state["active_org"] = matched_db
+                            if newly_selected_urn and not matched_db.get("org_urn"):
+                                update_org_urn(matched_db["id"], newly_selected_urn)
+                            st.session_state.selected_account = newly_selected
+                            st.rerun()
+                        else:
+                            # Descarte temporal en sesión para evitar reruns innecesarios ante orfandad en BD.
+                            st.session_state.selected_account = newly_selected
+                    else:
+                        # El state de BD concuerda con la UI; forzar actualización en sesión local para purgar leaks.
+                        st.session_state.selected_account = newly_selected
+                        # Parche reactivo: inyectar el URN omitido en el tuple persistente existente.
+                        matched_db = _find_db_org(newly_selected)
+                        if matched_db and newly_selected_urn and not matched_db.get("org_urn"):
+                            update_org_urn(matched_db["id"], newly_selected_urn)
+                        # Propagar alias de estado a la llave legacy.
+                        if matched_db:
+                            st.session_state["active_org"] = matched_db
+
         st.markdown('<div class="nav-title">Herramientas</div>', unsafe_allow_html=True)
         st.markdown(f"<a href='/Dashboard' target='_self' class='nav-link'><i class='bi bi-grid-fill'></i> Dashboard</a>", unsafe_allow_html=True)
         st.markdown(f"<a href='/Content_Generation' target='_self' class='nav-link'><i class='bi bi-magic'></i> Generar Contenido</a>", unsafe_allow_html=True)
         st.markdown(f"<a href='/Posts_Management' target='_self' class='nav-link'><i class='bi bi-archive-fill'></i> Gestionar Posts</a>", unsafe_allow_html=True)
-        
-        # --- CONEXIONES SOCIALES ---
+
         st.markdown('<div class="nav-title">Conexiones</div>', unsafe_allow_html=True)
-        with st.container(border=True):
-            display_auth_status(sidebar=True)
-            selected_account_data = display_account_selector(sidebar=True)
+        display_auth_status(sidebar=True)
 
-        # --- ACCIÓN DE CIERRE DE SESIÓN ---
         st.divider()
-        if st.button("Cerrar Sesión", use_container_width=True):
+        if st.button("Cerrar Sesion", use_container_width=True):
             logout()
-            st.success("¡Sesión cerrada correctamente!")
-            st.rerun()
+            st.switch_page("app.py")
 
-        # Retornamos solo los datos necesarios
-        return selected_account_data
+        return st.session_state.get("selected_account")

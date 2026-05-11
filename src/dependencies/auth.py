@@ -1,12 +1,19 @@
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 from src.core.logger import logger
-from src.services.supabase_client import get_supabase
+from src.services.supabase_client import get_supabase_admin as get_supabase
 from datetime import datetime, timezone
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 def get_current_session_data_from_token(token: str | None = Depends(oauth2_scheme)) -> dict:
+    """
+    Verifica el token Bearer provisto y recupera la sesión autenticada.
+
+    :param token: JWT o cadena de acceso provista en el header Authorization.
+    :returns: Diccionario estructurado con la data de la sesión extraída de la BD.
+    :raises HTTPException: Status 401 si el token expiró, es inválido o no se proveyó.
+    """
     if token is None:
         raise HTTPException(status_code=401, detail="Not authenticated")
 

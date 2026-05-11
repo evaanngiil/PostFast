@@ -40,13 +40,13 @@ class LLMFactory:
     @staticmethod
     def _build_gemini_llm(llm_name: str, llm_params: Dict, tools: List = None) -> BaseLanguageModel:
           return ChatGoogleGenerativeAI(
-                model="gemini-2.0-flash",
+                model="gemini-2.5-flash",
                 api_key=GENAI_API_KEY,
                 **{**LLMFactory._default_params, **llm_params}
           )
 
     @staticmethod
-    def get_llm(provider: str = "gemini", llm_name: str = "gemini-2.0-flash", 
+    def get_llm(provider: str = "gemini", llm_name: str = "gemini-2.5-flash", 
                 llm_params: Dict = None, tools: List = None) -> BaseLanguageModel:
         """
         Get an LLM instance, reusing existing ones if possible.

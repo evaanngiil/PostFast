@@ -156,21 +156,9 @@ def compile_graph():
     try:
         from psycopg_pool import NullConnectionPool
         
-        # ¿Por qué NullConnectionPool en lugar de ConnectionPool?
-        # ConnectionPool usa un thread de mantenimiento en background para gestionar
-        # idle connections y crear reemplazos. El pool prefork de Celery crea
-        # workers haciendo un fork del proceso principal, y los threads de Python
-        # NO sobreviven al fork(). Esto significa:
-        #   1. El pool se crea al momento de import en el proceso principal.
-        #   2. Celery hace un fork del worker — el thread de mantenimiento muere.
-        #   3. La primera conexión on-demand funciona bien.
-        #   4. Cuando esa conexión se vuelve obsoleta (Supabase mata las idle SSL
-        #      connections), el pool la descarta pero no puede crear un
-        #      reemplazo (no hay thread de mantenimiento) → PoolTimeout permanente.
-        #
-        # NullConnectionPool soluciona esto: crea una conexión fresca
-        # para cada request y la cierra al terminar. No hay threads en background.
-        # El overhead es insignificante para nuestro caso de uso.
+        # Se emplea NullConnectionPool para instanciar conexiones stateless.
+        # Esto mitiga colisiones de thread-safety inherentes al forking de Celery (prefork)
+        # y previene PoolTimeouts causados por la recolección agresiva de idle SSL connections en Supabase.
         pool = NullConnectionPool(
             conninfo=SUPABASE_CONN_STRING,
             max_size=3,

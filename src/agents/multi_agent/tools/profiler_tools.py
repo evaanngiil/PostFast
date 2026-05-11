@@ -1,37 +1,57 @@
-import requests
-from bs4 import BeautifulSoup
+"""
+Herramientas compartidas para content_writer y company_profiler.
+Maneja la extracción web y la búsqueda con Tavily.
+"""
+
 from langchain_core.tools import tool
-from src.core.constants import TAVILY_API_KEY
-from langchain_community.tools.tavily_search import TavilySearchResults
 
-
-@tool
-def scrape_website(url: str) -> str:
-    """Extrae el contenido de texto principal de una URL dada."""
-    print(f"--- 🛠️ Herramienta Scraper: Extrayendo contenido de '{url}' ---")
+try:
+    from langchain_tavily import TavilySearch
+    _tavily_search = TavilySearch(max_results=5)
+except ImportError:
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
-        response = requests.get(url, headers=headers, timeout=15)
+        from langchain_community.tools.tavily_search import TavilySearchResults
+        _tavily_search = TavilySearchResults(max_results=5)
+    except ImportError:
+        _tavily_search = None
+
+
+def scrape_website(url: str) -> str:
+    """Scrape a website and return its text content."""
+    try:
+        import requests
+        response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
         response.raise_for_status()
-        soup = BeautifulSoup(response.content, 'html.parser')
-        for script_or_style in soup(['script', 'style', 'nav', 'footer', 'header', 'aside']):
-            script_or_style.decompose()
-        text = soup.get_text(separator=' ', strip=True)
-        return ' '.join(text.split())[:8000] # Limita la longitud
-    except requests.RequestException as e:
-        return f"Error al acceder a la URL {url}: {e}"
+        return response.text[:5000]
     except Exception as e:
-        return f"Error inesperado al procesar la URL {url}: {e}"
-    
+        return f"Error scraping {url}: {e}"
+
+
 @tool
 def web_search(query: str) -> str:
-    """
-    Realiza una búsqueda web para encontrar información factual, estadísticas o estudios recientes.
-    Usa esto para encontrar datos que respalden las afirmaciones en una publicación.
-    """
-    print(f"--- 🛠️ Herramienta de Búsqueda: Buscando '{query}' ---")
-    if not TAVILY_API_KEY:
-        return "La clave API de Tavily no está configurada."
-    tavily_tool = TavilySearchResults(max_results=3, api_key=TAVILY_API_KEY)
-    results = tavily_tool.invoke(query)
-    return "\n".join([f"Fuente: {res['url']}\nContenido: {res['content']}" for res in results])
+    """Search the web for information. Returns relevant search results as text."""
+    if _tavily_search is None:
+        return "Web search tool is not available (Tavily not configured)."
+
+    try:
+        results = _tavily_search.invoke(query)
+    except Exception as e:
+        return f"Search error: {e}"
+
+    if isinstance(results, str):
+        return results if results.strip() else "No results found."
+
+    if isinstance(results, list):
+        parts = []
+        for res in results:
+            if isinstance(res, dict):
+                url = res.get("url", "N/A")
+                content = res.get("content", "")
+                parts.append(f"Fuente: {url}\nContenido: {content}")
+            elif isinstance(res, str):
+                parts.append(res)
+            else:
+                parts.append(str(res))
+        return "\n\n".join(parts) if parts else "No results found."
+
+    return str(results) if results else "No results found."

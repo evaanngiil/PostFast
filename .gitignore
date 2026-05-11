@@ -34,3 +34,4 @@ docs
 example.*
 backup
 .DS*
+src/agents/agentes_prueba
