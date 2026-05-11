@@ -30,7 +30,7 @@ socialmedia*
 code_*
 
 *.http
-CLAUDE.md
+docs
 example.*
 backup
 .DS*
