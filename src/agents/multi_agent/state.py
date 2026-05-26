@@ -46,6 +46,8 @@ class AgentState(TypedDict):
     brand_persona_json: Optional[Dict[str, Any]]
     fleshed_out_idea: Optional[PostIdea]
     draft_post: Optional[DraftPost]
+    last_draft_content: Optional[str]  # Mantiene el texto exacto para referencia en feedback
+
     
     # Engagement data fields
     engagement_insights: Optional[Dict[str, Any]]           

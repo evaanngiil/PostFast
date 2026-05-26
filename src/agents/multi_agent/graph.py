@@ -68,7 +68,11 @@ def human_review_node(state: AgentState) -> dict:
             "clearing draft_post for regeneration ---",
             feedback[:60],
         )
-        return {"draft_post": None}
+        current_draft = state.get("draft_post", {}).get("content", "")
+        return {
+            "draft_post": None,
+            "last_draft_content": current_draft    
+        }
 
     logger.info("--- human_review: draft approved -> END ---")
     return {}

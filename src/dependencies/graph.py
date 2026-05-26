@@ -4,9 +4,7 @@ Expone el workflow inicializado para que pueda ser consumido por los endpoints d
 """
 
 from fastapi import Request, HTTPException
-from src.agents.content_agent.agent import create_workflow
 
-graph = create_workflow()
 
 async def get_graph(request: Request):
     """
@@ -19,6 +17,7 @@ async def get_graph(request: Request):
     :return: La instancia compilada del grafo.
     :raises HTTPException: Si el grafo no pudo ser inicializado (HTTP 500).
     """
+    graph = None
     if not graph:
         raise HTTPException(status_code=500, detail="LangGraph is not initialized.")
     return graph

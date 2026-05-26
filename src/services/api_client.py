@@ -211,8 +211,8 @@ def create_post(
     status: str,
     platform: str,
     account_id: str,
-    scheduled_time: Optional[datetime] = None,
-    published_time: Optional[datetime] = None,
+    scheduled_time: Optional[_dt] = None,
+    published_time: Optional[_dt] = None,
     title: Optional[str] = None,
     feedback: Optional[str] = None,
     image_url: Optional[str] = None,
@@ -235,21 +235,31 @@ def create_post(
     """
     supabase = get_supabase()
     post_id = str(uuid.uuid4())
+
+    # Serialización explícita a ISO format para evitar errores de JSON en Supabase
+    s_time = scheduled_time.isoformat() if scheduled_time else None
+    p_time = published_time.isoformat() if published_time else None
+
     payload = {
         "id": post_id,
         "content": content,
         "status": status,
         "platform": platform,
         "account_id": account_id,
-        "scheduled_time": scheduled_time,
-        "published_time": published_time,
+        "scheduled_time": s_time,
+        "published_time": p_time,
         "title": title,
         "feedback": feedback,
         "image_url": image_url,
         "link_url": link_url,
     }
-    supabase.table("posts").insert({k: v for k, v in payload.items() if v is not None}).execute()
-    return post_id
+
+    try:
+        supabase.table("posts").insert({k: v for k, v in payload.items() if v is not None}).execute()
+        return post_id
+    except Exception as e:
+        logger.error(f"Error persistiendo post en DB: {e}")
+        raise # Re-lanzar para que el router sepa que falló
 
 def get_all_posts(status: Optional[str] = None, account_id: Optional[str] = None) -> List[Dict[str, Any]]:
     """

@@ -988,8 +988,12 @@ def resume_content_generation_task(self, checkpoint, payload):
         if feedback.strip().lower() == 'aprobar':
             final_state = _update_and_invoke({"user_feedback": None})
         else:
-            final_state = _update_and_invoke(
-                {"user_feedback": feedback, "draft_post": None},
+            final_state = _invoke_with_retry(
+                lambda: (
+                    aipost_graph.update_state(config, {"user_feedback": feedback}),
+                    aipost_graph.invoke(None, config=config)
+                )[1],
+                logger=logger
             )
 
         if final_state is None:

@@ -123,7 +123,7 @@ def render_publication_controls(
     :param api_client_module: Dependencia del API client.
     :returns: None.
     """
-    publish_now = st.button("\u2705 Publicar Ahora", key="publish_now_btn", use_container_width=True)
+    publish_now = st.button("\u2705 Publicar", key="publish_now_btn", use_container_width=True)
     schedule_mode = st.toggle("\U0001f4c5 Programar para despues", key="schedule_toggle")
     scheduled_time = None
 
@@ -395,8 +395,8 @@ def render_page(active_context: Dict[str, Any]):
         render_stepper(0, ["Generando", "Revision", "Publicacion"])
         niche, tone, query, link_url, submitted = render_generation_form()
         if submitted:
-            if not query or not niche:
-                render_feedback_box("Por favor, completa los campos 'Nicho' y 'Descripcion'.", type_="warning")
+            if not query or not tone:
+                render_feedback_box("Por favor, completa los campos 'Tono' y 'Descripcion'.", type_="warning")
             else:
                 try:
                     with st.status("Enviando tu solicitud a la IA..."):

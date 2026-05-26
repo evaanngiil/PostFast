@@ -1,3 +1,4 @@
+from google.genai import file_search_stores
 import json
 import re
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -50,52 +51,74 @@ def run_content_writer_node(state: AgentState) -> dict:
             IMPORTANTE: Usa estos datos como inspiracion para el estilo, tono y estructura. NO copies los posts de ejemplo.
         """
 
-    system_message = f"""Eres un Redactor de Contenido de LinkedIn de clase mundial para la empresa "{company_profile['name']}". Eres un experto en crear posts atractivos, factuales y, sobre todo, relevantes para la marca. Tu mision es tomar el contexto proporcionado y redactar una publicacion final y pulida.
+    system_message = f"""
+        Eres un Redactor de Contenido de LinkedIn de clase mundial para la empresa "{company_profile['name']}". Eres un experto en crear posts atractivos, factuales y, sobre todo, relevantes para la marca. Tu mision es tomar el contexto proporcionado y redactar una publicacion final y pulida.
 
-**Reglas de Comportamiento Estrictas:**
-- **REGLA DE ORO DE RELEVANCIA:** Siempre debes conectar el tema de la publicacion con el rol, la mision o los servicios de la empresa. El post debe sentirse como si viniera directamente de "{company_profile['name']}", no de un generador de contenido generico. Usa frases como "En {company_profile['name']}, creemos que...", "Nuestra plataforma te ayuda a...", etc.
-- **REGLA DE FACTUALIDAD:** Si mencionas cualquier dato o estadistica, DEBES usar la herramienta `web_search` para encontrar informacion real y verificable.
-- **PROHIBIDO:** No inventes estadisticas ni uses placeholders como "[Fuente de datos]" o "[X]%" o "[enlace ]". Debes generar un post final y completo.
-- Adherete estrictamente al Perfil de Marca proporcionado en el contexto.
-- Incluye 3-5 hashtags relevantes.
-- Termina con una llamada a la accion (CTA) clara. Usa un formato de post de LinkedIn. Si vas a incluir un enlace en el CTA no uses placeholders, usa este: {cta_link}
-{engagement_context}"""
+        **Reglas de Comportamiento Estrictas:**
+        - **REGLA DE ORO DE RELEVANCIA:** Siempre debes conectar el tema de la publicacion con el rol, la mision o los servicios de la empresa. El post debe sentirse como si viniera directamente de "{company_profile['name']}", no de un generador de contenido generico. Usa frases como "En {company_profile['name']}, creemos que...", "Nuestra plataforma te ayuda a...", etc.
+        - **REGLA DE FACTUALIDAD:** Si mencionas cualquier dato o estadistica, DEBES usar la herramienta `web_search` para encontrar informacion real y verificable.
+        - **PROHIBIDO:** No inventes estadisticas ni uses placeholders como "[Fuente de datos]" o "[X]%" o "[enlace ]". Debes generar un post final y completo.
+        - Adherete estrictamente al Perfil de Marca proporcionado en el contexto.
+        - Incluye 3-5 hashtags relevantes.
+        - Termina con una llamada a la accion (CTA) clara. Usa un formato de post de LinkedIn. Si vas a incluir un enlace en el CTA no uses placeholders, usa este: {cta_link}
+        {engagement_context}
+    """
 
-    llm = ChatGoogleGenerativeAI(model=SMART_LLM, google_api_key=GENAI_API_KEY, temperature=0.5)
+    # Construir el mensaje humano con todo el contexto
+    # Si user_feedback esta presente, esto es un pase de revision — incluirlo.
+    user_feedback = state.get("user_feedback")
+    last_draft = state.get("last_draft_content")
+
+    writer_temp = 0.5 if not user_feedback else 0.1
+    
+    llm = ChatGoogleGenerativeAI(
+        model=SMART_LLM, 
+        google_api_key=GENAI_API_KEY, 
+        temperature=writer_temp
+    )
 
     agent = create_react_agent(
         model=llm,
         tools=[web_search],
         prompt=system_message,
     )
+    
+    input_context = f"""
+        **Contexto para la Redaccion:**
 
-    # Construir el mensaje humano con todo el contexto
-    # Si user_feedback esta presente, esto es un pase de revision — incluirlo.
-    user_feedback = state.get("user_feedback")
+        **1. Perfil de la Empresa (Para Relevancia):**
+        {json.dumps(company_profile, indent=2, ensure_ascii=False)}
 
-    input_context = f"""**Contexto para la Redaccion:**
+        **2. Perfil de Marca (Para Tono y Estilo):**
+        {json.dumps(persona, indent=2, ensure_ascii=False)}
 
-**1. Perfil de la Empresa (Para Relevancia):**
-{json.dumps(company_profile, indent=2, ensure_ascii=False)}
+        **3. Idea de Contenido Aprobada:**
+        {json.dumps(idea, indent=2, ensure_ascii=False)}
 
-**2. Perfil de Marca (Para Tono y Estilo):**
-{json.dumps(persona, indent=2, ensure_ascii=False)}
+        Ahora, por favor, redacta la publicacion final de LinkedIn. Recuerda la REGLA DE ORO DE RELEVANCIA.
+    """
 
-**3. Idea de Contenido Aprobada:**
-{json.dumps(idea, indent=2, ensure_ascii=False)}
-
-Ahora, por favor, redacta la publicacion final de LinkedIn. Recuerda la REGLA DE ORO DE RELEVANCIA."""
-
-    if user_feedback:
+    if user_feedback and last_draft:
         logger.info(f"Revisión iterativa generada (HITL). Feedback: {user_feedback[:80]}...")
         input_context += f"""
+            
+            **MODO EDICIÓN ESTRICTA ACTIVADO:**
+            El usuario ya tiene un borrador y desea realizar cambios específicos.
+            
+            **BORRADOR ACTUAL (NO CAMBIAR SU ESTRUCTURA):**
+            ---
+            {last_draft}
+            ---
 
-**⚠️ REVISION REQUERIDA POR EL USUARIO:**
-El usuario ha revisado un borrador anterior y ha solicitado los siguientes cambios:
----
-{user_feedback}
----
-Aplica EXACTAMENTE los cambios solicitados al contenido. Mantén el resto del post sin cambios a menos que el feedback indique lo contrario."""
+            **CAMBIOS SOLICITADOS POR EL USUARIO:**
+            "{user_feedback}"
+
+            **REGLAS CRÍTICAS DE REFINAMIENTO:**
+            1. MANTÉN la estructura exacta, los párrafos y el estilo del borrador actual.
+            2. MANTÉN la longitud total del post.
+            3. APLICA únicamente los cambios o correcciones solicitadas en el feedback.
+            4. No intentes reescribir partes que no han sido mencionadas en el feedback.
+        """
 
     result = agent.invoke(
         {"messages": [("human", input_context)]},

@@ -91,11 +91,11 @@ def render_content_form() -> tuple[str, str, str, str, bool]:
     :returns: Una tupla con (nicho, tono, descripción, URL de enlace, estado del submit).
     """
     with st.form("content_generation_form"):
-        niche = st.text_input("Niche / Target Audience", help="E.g., 'Software developers interested in AI'")
-        tone = st.selectbox("Message Tone", ["Professional", "Informal", "Inspirational", "Funny", "Informative"])
-        query_description = st.text_area("Describe what you want to publish", height=100, help="E.g., 'A post announcing our new LangGraph integration'")
-        link_url = st.text_input("Link URL (Optional)", key="content_link_url")
-        submitted = st.form_submit_button("\u2728 Generate Draft Content")
+        niche = ""
+        tone = st.selectbox("Selecciona el tono de la publicacion", ["Professional", "Informal", "Inspirational", "Funny", "Informative"])
+        query_description = st.text_area("Describe lo que quieres publicar", height=100, help="E.g., 'Una publicacion anunciando nuestra nueva integracion con LangGraph'")
+        link_url = ""
+        submitted = st.form_submit_button("\u2728 Generar borrador de contenido")
 
         return niche, tone, query_description, link_url, submitted
 
@@ -119,22 +119,22 @@ def render_publication_controls(
     :param api_client_module: Módulo o servicio del cliente API.
     :returns: None
     """
-    publish_now = st.button("\u2705 Publish Now", key="publish_now_btn", use_container_width=True)
-    schedule_mode = st.toggle("\U0001f4c5 Schedule for later", key="schedule_toggle")
+    publish_now = st.button("\u2705 Publicar ahora", key="publish_now_btn", use_container_width=True)
+    schedule_mode = st.toggle("\U0001f4c5 Programar para más tarde", key="schedule_toggle")
     scheduled_time = None
 
     if schedule_mode:
         col1, col2 = st.columns(2)
         now_utc = datetime.now(timezone.utc)
         with col1:
-            scheduled_date = st.date_input("Date (UTC)", value=now_utc, min_value=now_utc.date(), key="schedule_date")
+            scheduled_date = st.date_input("Fecha (UTC)", value=now_utc, min_value=now_utc.date(), key="schedule_date")
         with col2:
-            scheduled_time_input = st.time_input("Time (UTC)", value=now_utc, key="schedule_time")
+            scheduled_time_input = st.time_input("Hora (UTC)", value=now_utc, key="schedule_time")
 
         if scheduled_date and scheduled_time_input:
             scheduled_time = datetime.combine(scheduled_date, scheduled_time_input).replace(tzinfo=timezone.utc)
 
-    publish_schedule = st.button("\U0001f680 Confirm Schedule", key="schedule_confirm_btn", disabled=not schedule_mode or not scheduled_time, use_container_width=True)
+    publish_schedule = st.button("\U0001f680 Programar Publicación", key="schedule_confirm_btn", disabled=not schedule_mode or not scheduled_time, use_container_width=True)
 
     action_triggered = publish_now or (publish_schedule and scheduled_time)
     if action_triggered:
@@ -277,11 +277,11 @@ def render_publish_ui(final_post: str, final_link_url: str, account_name: str, p
         )
 
         st.divider()
-        st.caption("O guarda el post para publicarlo mas tarde:")
-        if st.button("\U0001f4be Guardar para mas tarde", type="secondary", use_container_width=True):
+        st.caption("O guarda el post para publicarlo más tarde:")
+        if st.button("\U0001f4be Guardar para más tarde", type="secondary", use_container_width=True):
             token = api_client._get_current_token()
             if not token:
-                st.error("No hay token de autenticacion. Por favor, inicia sesion.")
+                st.error("No hay token de autenticación. Por favor, inicia sesión.")
             else:
                 try:
                     with st.status("Guardando post..."):
@@ -297,7 +297,7 @@ def render_publish_ui(final_post: str, final_link_url: str, account_name: str, p
                         )
                         response.raise_for_status()
                         post_id = response.json()
-                        st.success(f"\u2705 Post guardado para mas tarde (ID: {post_id})")
+                        st.success(f"\u2705 Post guardado para más tarde (ID: {post_id})")
                         for key in ['draft_content', 'generation_task_id', 'checkpoint', 'task_id_for_resume']:
                             if key in st.session_state:
                                 del st.session_state[key]
@@ -319,7 +319,7 @@ def render_page(active_context: Dict[str, Any]):
         st.error("Error interno: Se intento renderizar la pagina sin un contexto de cuenta activo.")
         return
 
-    st.title("\u270d\ufe0f Generacion de Contenido")
+    st.title("\u270d\ufe0f Generación de Contenido")
     account_name = active_context.get("name", "Cuenta desconocida")
     platform = active_context.get("platform", "Plataforma desconocida")
     account_id = str(active_context.get("account_id", ""))
@@ -377,8 +377,8 @@ def render_page(active_context: Dict[str, Any]):
         render_stepper(0, ["Generando", "Revision", "Publicacion"])
         niche, tone, query, link_url, submitted = render_generation_form()
         if submitted:
-            if not query or not niche:
-                render_feedback_box("Por favor, completa los campos 'Nicho' y 'Descripcion'.", type_="warning")
+            if not query or not tone:
+                render_feedback_box("Por favor, completa los campos 'Tono' y 'Descripcion'.", type_="warning")
             else:
                 try:
                     with st.status("Enviando tu solicitud a la IA..."):

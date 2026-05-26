@@ -50,7 +50,12 @@ def run_persona_analyst_node(state: AgentState) -> Dict[str, Any]:
 
     if specialties := company_profile.get("specialties"):
         if isinstance(specialties, list) and specialties:
-            dossier_entries.append(f"Especialidades Clave: {', '.join(specialties)}")
+            # Normalización robusta para manejar strings o dicts
+            specs_str = ", ".join(
+                (s.get("text") or s.get("localized") or str(s)) if isinstance(s, dict) else str(s)
+                for s in specialties
+            )
+            dossier_entries.append(f"Especialidades Clave: {specs_str}")
 
     # El 'About Us' es la fuente principal de tono.
     if about_us := company_profile.get("about_us_content"):

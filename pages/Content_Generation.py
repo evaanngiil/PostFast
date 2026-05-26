@@ -12,8 +12,6 @@ ensure_auth(protect_route=True)
 
 user = st.session_state.get('user')
 
-st.markdown("## Generacion de Contenido")
-
 selected_account_data = render_sidebar(user)
 
 # Comprobar si el usuario ha conectado LinkedIn y ha seleccionado una cuenta.
