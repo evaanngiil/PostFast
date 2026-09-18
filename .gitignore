@@ -14,8 +14,7 @@ MANIFEST
 # Vscode settings
 .vscode/
 
-# poetry
-poetry.lock
+# poetry.lock SÍ se versiona (reproducibilidad de builds)
 
 # Environments
 .env
@@ -34,4 +33,14 @@ docs
 example.*
 backup
 .DS*
+.s*
+.p*
+.r*
+.claude
+.github
 src/agents/agentes_prueba
+
+migrations
+package-lock.json
+package.json
+poetry.lock
