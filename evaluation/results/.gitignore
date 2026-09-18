@@ -1,0 +1,4 @@
+*.jsonl
+*.evaluated.json
+*.report.md
+!.gitkeep

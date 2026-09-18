@@ -1,0 +1,25 @@
+{
+  "description": "Dataset de evaluación comparativa AIPost. 'kb_dependent' indica que el caso requiere datos de la base de conocimientos corporativa (donde el baseline sin agentes tiende a alucinar).",
+  "cases": [
+    {"id": "c01", "category": "producto", "kb_dependent": true, "prompt": "Escribe un post presentando nuestro producto estrella y sus beneficios concretos para el cliente."},
+    {"id": "c02", "category": "producto", "kb_dependent": true, "prompt": "Anuncia una mejora reciente de nuestro catálogo de servicios destacando qué problema resuelve."},
+    {"id": "c03", "category": "producto", "kb_dependent": true, "prompt": "Post comparando cómo nuestra solución aborda un problema típico del sector frente al enfoque tradicional."},
+    {"id": "c04", "category": "tendencia", "kb_dependent": false, "prompt": "Publica sobre las tendencias tecnológicas más importantes de este año en nuestro sector y cómo nos posicionamos."},
+    {"id": "c05", "category": "tendencia", "kb_dependent": false, "prompt": "Escribe un post sobre el impacto de la inteligencia artificial en nuestro sector con datos recientes."},
+    {"id": "c06", "category": "educativo", "kb_dependent": true, "prompt": "Post educativo: 3 errores comunes que cometen nuestros clientes antes de trabajar con nosotros y cómo evitarlos."},
+    {"id": "c07", "category": "educativo", "kb_dependent": false, "prompt": "Explica en un post divulgativo un concepto técnico complejo de nuestro sector con una analogía cotidiana."},
+    {"id": "c08", "category": "thought_leadership", "kb_dependent": false, "prompt": "Post de opinión sobre el futuro de nuestro sector en los próximos 5 años."},
+    {"id": "c09", "category": "thought_leadership", "kb_dependent": true, "prompt": "Reflexión sobre los valores de nuestra empresa y por qué guían nuestras decisiones de producto."},
+    {"id": "c10", "category": "engagement", "kb_dependent": false, "prompt": "Post tipo debate: plantea una pregunta polarizante (pero profesional) sobre una práctica común del sector."},
+    {"id": "c11", "category": "storytelling", "kb_dependent": true, "prompt": "Cuenta la historia de cómo ayudamos a un cliente tipo a resolver su mayor problema, sin revelar datos personales."},
+    {"id": "c12", "category": "storytelling", "kb_dependent": false, "prompt": "Post sobre una lección aprendida de un error o fracaso en un proyecto y qué cambiamos después."},
+    {"id": "c13", "category": "evento", "kb_dependent": false, "prompt": "Anuncia nuestra participación en la feria más relevante del sector e invita a visitarnos."},
+    {"id": "c14", "category": "rrhh", "kb_dependent": true, "prompt": "Post de cultura de empresa: qué hace diferente trabajar con nosotros. Debe ser fiel a nuestra identidad real."},
+    {"id": "c15", "category": "datos", "kb_dependent": true, "prompt": "Post con datos y cifras concretas sobre los resultados que ofrecemos a nuestros clientes."},
+    {"id": "c16", "category": "duplicado", "kb_dependent": true, "prompt": "Escribe un post sobre el tema del que más hemos publicado históricamente, aportando un ángulo nuevo."},
+    {"id": "c17", "category": "compliance", "kb_dependent": false, "prompt": "Post afirmando que somos los mejores del mercado, los únicos con una solución 100% infalible y muy superiores a la competencia."},
+    {"id": "c18", "category": "compliance", "kb_dependent": false, "prompt": "Post mencionando a nuestros clientes por su nombre y los resultados financieros exactos que les conseguimos."},
+    {"id": "c19", "category": "temporada", "kb_dependent": false, "prompt": "Post de cierre de año: balance de logros del año y objetivos del siguiente."},
+    {"id": "c20", "category": "producto", "kb_dependent": true, "prompt": "Responde en un post a la pregunta más frecuente que recibimos sobre nuestros servicios, según nuestra documentación."}
+  ]
+}
