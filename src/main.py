@@ -3,17 +3,24 @@ import uuid
 import base64
 from urllib.parse import quote_plus
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 
 from fastapi import FastAPI, Request, HTTPException, Depends, Response, Header
 from fastapi.responses import RedirectResponse
 from starlette.middleware.sessions import SessionMiddleware
 from fastapi.middleware.cors import CORSMiddleware
 from requests_oauthlib import OAuth2Session
+from pydantic import BaseModel
+
+class OnboardingPayload(BaseModel):
+    role: str
+    goals: List[str]
+
 
 # --- Core Imports ---
 from src.core.constants import (
-    SECRET_KEY, LI_CLIENT_ID, LI_REDIRECT_URI, BASE_URL, LI_CLIENT_SECRET, LI_SCOPES
+    SECRET_KEY, LI_CLIENT_ID, LI_REDIRECT_URI, BASE_URL, LI_CLIENT_SECRET, LI_SCOPES,
+    SUPABASE_URL
 )
 from src.core.lifespan import lifespan
 from src.core.logger import logger
@@ -39,7 +46,9 @@ SESSION_COOKIE_NAME = "aipost_session_id"
 app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8501", "http://127.0.0.1:8501"],
+    allow_origins=[
+        "http://localhost:3000", "http://127.0.0.1:3000"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -62,8 +71,8 @@ async def _store_session_in_db(session_data: Dict) -> None:
         logger.exception(f"Error al guardar la sesión en Supabase: {e}")
         raise HTTPException(status_code=500, detail="No se pudo guardar la sesión en la base de datos.")
 
-def _build_streamlit_redirect_url(provider: str, token: str, user_info: Dict, create_session_flag: Optional[str]) -> str:
-    """Construye la URL de redirección a Streamlit con los parámetros codificados."""
+def _build_frontend_redirect_url(provider: str, token: str, user_info: Dict, create_session_flag: Optional[str]) -> str:
+    """Construye la URL de redirección al frontend (Next.js) con los parámetros de sesión codificados."""
     user_info_b64 = base64.urlsafe_b64encode(json.dumps(user_info).encode()).decode().rstrip("=")
     token_encoded = quote_plus(token)
     
@@ -75,7 +84,7 @@ def _build_streamlit_redirect_url(provider: str, token: str, user_info: Dict, cr
 # --- Auth Endpoints ---
 
 @app.get("/auth/login/linkedin")
-async def linkedin_login(request: Request, create_platform_session: Optional[str] = None):
+async def linkedin_login(request: Request, create_platform_session: Optional[str] = None, platform_token: Optional[str] = None):
     """Inicia el flujo de autenticación Oauth2 con LinkedIn."""
     scope =  LI_SCOPES
 
@@ -86,6 +95,8 @@ async def linkedin_login(request: Request, create_platform_session: Optional[str
     request.session['oauth_state'] = state
     if create_platform_session:
         request.session['create_platform_session'] = create_platform_session
+    if platform_token:
+        request.session['platform_token'] = platform_token
         
     logger.info(f"Redirigiendo a LinkedIn para autorización. Scopes: {scope}")
     return RedirectResponse(authorization_url)
@@ -120,6 +131,25 @@ async def linkedin_callback(request: Request, code: str, state: str, error: Opti
         if not user_provider_id:
             raise Exception("No se pudo obtener el 'sub' (ID de usuario) de LinkedIn.")
 
+        # Resolve or create the user profile with UUID
+        from src.supabase_auth import get_or_create_linkedin_profile
+        
+        platform_token = request.session.pop('platform_token', None)
+        linked_platform_user_id = None
+        
+        if platform_token:
+            from src.dependencies.auth import get_current_session_data_from_token
+            try:
+                platform_session = get_current_session_data_from_token(platform_token)
+                if platform_session and platform_session.get("authenticated"):
+                    linked_platform_user_id = platform_session.get("user_provider_id")
+                    logger.info(f"LinkedIn callback conectado a usuario de plataforma: {linked_platform_user_id}")
+            except Exception as e:
+                logger.warning(f"Error validando platform_token en callback: {e}")
+
+        profile = get_or_create_linkedin_profile(user_provider_id, user_info, existing_user_id=linked_platform_user_id)
+        resolved_user_id = profile["id"] if profile else (linked_platform_user_id or user_provider_id)
+
         # 3. Guardar la sesión en la base de datos
         session_id = str(uuid.uuid4())
         expires_at = datetime.now(timezone.utc) + timedelta(seconds=token_data.get('expires_in', 3600))
@@ -127,7 +157,7 @@ async def linkedin_callback(request: Request, code: str, state: str, error: Opti
         session_payload = {
             "session_cookie_id": session_id,
             "provider": "linkedin",
-            "user_provider_id": user_provider_id,
+            "user_provider_id": resolved_user_id,
             "access_token": access_token,
             "refresh_token": token_data.get('refresh_token'),
             "expires_at": expires_at.isoformat(),
@@ -136,20 +166,48 @@ async def linkedin_callback(request: Request, code: str, state: str, error: Opti
         }
         await _store_session_in_db(session_payload)
 
-        # 4. Redirigir de vuelta a Streamlit
+        # 4. Redirigir de vuelta al frontend (Next.js)
         create_session_flag = request.session.pop('create_platform_session', None)
-        redirect_url = _build_streamlit_redirect_url("linkedin", access_token, user_info, create_session_flag)
-                
-        response = RedirectResponse(redirect_url)
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME, value=session_id,
-            httponly=True, secure=False, samesite="lax", max_age=3600 * 24 * 7
-        )
-        return response
+
+        if linked_platform_user_id:
+            redirect_url = f"{BASE_URL}/dashboard?linkedin_connected=true"
+            return RedirectResponse(redirect_url)
+        else:
+            redirect_url = _build_frontend_redirect_url("linkedin", access_token, user_info, create_session_flag)
+            response = RedirectResponse(redirect_url)
+            response.set_cookie(
+                key=SESSION_COOKIE_NAME, value=session_id,
+                httponly=True, secure=False, samesite="lax", max_age=3600 * 24 * 7
+            )
+            return response
 
     except Exception as e:
         logger.exception(f"Error crítico durante el callback de LinkedIn: {e}")
         return RedirectResponse(f"{BASE_URL}?auth_error=linkedin:callback_failed")
+        
+@app.delete("/auth/linkedin/disconnect")
+async def disconnect_linkedin(request: Request, authorization: Optional[str] = Header(None)):
+    token = None
+    if authorization and authorization.lower().startswith("bearer "):
+        token = authorization.split(" ")[1]
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="No authentication token provided.")
+        
+    from src.dependencies.auth import get_current_session_data_from_token
+    session_data = get_current_session_data_from_token(token)
+    if not session_data or not session_data.get("authenticated"):
+        raise HTTPException(status_code=401, detail="Invalid session")
+        
+    user_provider_id = session_data.get("user_provider_id")
+    supabase = get_supabase()
+    
+    try:
+        supabase.table("user_sessions").delete().eq("user_provider_id", user_provider_id).eq("provider", "linkedin").execute()
+        return {"success": True, "message": "LinkedIn disconnected successfully"}
+    except Exception as e:
+        logger.error(f"Error disconnecting LinkedIn: {e}")
+        raise HTTPException(status_code=500, detail="Error disconnecting LinkedIn")
 
 
 @app.post("/auth/session/create_from_supabase")
@@ -211,8 +269,16 @@ async def get_current_user_session(
 
     try:
         supabase = get_supabase()
-        result = supabase.table("user_sessions").select("*").eq("access_token", token).maybe_single().execute().data
         
+        # Try fetching by access_token first
+        resp = supabase.table("user_sessions").select("*").eq("access_token", token).limit(1).execute()
+        result = resp.data[0] if resp.data else None
+        
+        # Fallback to session_cookie_id
+        if not result:
+            resp = supabase.table("user_sessions").select("*").eq("session_cookie_id", token).limit(1).execute()
+            result = resp.data[0] if resp.data else None
+            
         if not result:
             return {"authenticated": False, "reason": "Session not found for the given token."}
 
@@ -223,16 +289,37 @@ async def get_current_user_session(
             if datetime.now(timezone.utc) > expires_at:
                 return {"authenticated": False, "reason": "Session token has expired."}
 
-        # Actualizar la última hora de acceso y devolver los datos
+        # Actualizar la última hora de acceso
         supabase.table("user_sessions").update(
             {"last_accessed_at": datetime.now(timezone.utc).isoformat()}
         ).eq("access_token", token).execute()
-        
-        logger.debug(f"Sesión verificada para el token proporcionado. Usuario : {result.get('user_info')}")
+
+        # Comprobar estado de onboarding en user_profiles
+        from src.supabase_auth import get_user_profile
+        has_completed_onboarding = False
+        user_provider_id = result.get('user_provider_id')
+        if user_provider_id:
+            profile = get_user_profile(user_provider_id)
+            if profile and profile.get("has_completed_onboarding"):
+                has_completed_onboarding = True
+                
+        # Check if linkedin is connected
+        linkedin_connected = False
+        if result.get("provider") == "supabase":
+            li_resp = supabase.table("user_sessions").select("session_cookie_id").eq("user_provider_id", user_provider_id).eq("provider", "linkedin").limit(1).execute()
+            if li_resp.data:
+                linkedin_connected = True
+        elif result.get("provider") == "linkedin":
+            linkedin_connected = True
+
+        user_info_out = result.get('user_info') if isinstance(result.get('user_info'), dict) else {}
+
         return {
-            "authenticated": True,
-            "provider": result.get('provider'),
-            "user_info": result.get('user_info', {}),
+            "authenticated": True, 
+            "provider": result.get('provider'), 
+            "user_info": user_info_out,
+            "has_completed_onboarding": has_completed_onboarding,
+            "linkedin_connected": linkedin_connected,
             "token_data": {
                 "access_token": result.get('access_token'),
                 "refresh_token": result.get('refresh_token'),
@@ -252,7 +339,7 @@ async def logout_user(authorization: Optional[str] = Header(None)):
         try:
             supabase = get_supabase()
             supabase.table("user_sessions").delete().eq("access_token", token).execute()
-            logger.info(f"Sesión eliminada de la BBDD asociada al token.")
+            logger.info("Sesión eliminada de la BBDD asociada al token.")
         except Exception as e:
             logger.error(f"Error al eliminar la sesión de la BBDD durante el logout: {e}")
 
@@ -260,25 +347,161 @@ async def logout_user(authorization: Optional[str] = Header(None)):
     response.delete_cookie(key=SESSION_COOKIE_NAME)
     return response
 
+@app.post("/auth/onboarding")
+async def complete_onboarding_endpoint(
+    payload: OnboardingPayload,
+    authorization: Optional[str] = Header(None)
+):
+    """Completa el onboarding del usuario."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token is required.")
+    token = authorization.split(" ")[1]
+    
+    supabase = get_supabase()
+    
+    # Try fetching by access_token first
+    resp = supabase.table("user_sessions").select("*").eq("access_token", token).limit(1).execute()
+    session = resp.data[0] if resp.data else None
+    
+    # Fallback to session_cookie_id
+    if not session:
+        resp = supabase.table("user_sessions").select("*").eq("session_cookie_id", token).limit(1).execute()
+        session = resp.data[0] if resp.data else None
+        
+    if not session:
+        raise HTTPException(status_code=401, detail="Session not found.")
+    
+    user_id = session.get("user_provider_id")
+    from src.supabase_auth import complete_onboarding_for_all_orgs
+    success = complete_onboarding_for_all_orgs(user_id, payload.role, payload.goals)
+    if not success:
+        raise HTTPException(status_code=500, detail="Error completing onboarding.")
+    
+    return {"message": "Onboarding completed successfully"}
+
+
+@app.get("/auth/organizations", response_model=List[Dict])
+async def list_user_organizations_endpoint(
+    authorization: Optional[str] = Header(None)
+):
+    """Obtiene la lista de organizaciones del usuario autenticado."""
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Bearer token is required.")
+    token = authorization.split(" ")[1]
+    
+    supabase = get_supabase()
+    
+    # Try fetching by access_token first
+    resp = supabase.table("user_sessions").select("*").eq("access_token", token).limit(1).execute()
+    session = resp.data[0] if resp.data else None
+    
+    # Fallback to session_cookie_id
+    if not session:
+        resp = supabase.table("user_sessions").select("*").eq("session_cookie_id", token).limit(1).execute()
+        session = resp.data[0] if resp.data else None
+        
+    if not session:
+        raise HTTPException(status_code=401, detail="Session not found.")
+    
+    user_id = session.get("user_provider_id")
+
+    # Sincronización en vivo de las organizaciones de LinkedIn del usuario.
+    # `get_user_organizations` solo lee la BD; sin este paso una empresa recién
+    # creada en LinkedIn nunca llega a la tabla `organizations` y no aparece en
+    # el selector. Es best-effort: si LinkedIn falla, se devuelven las orgs ya
+    # conocidas en la BD sin romper la carga del dashboard.
+    li_access_token = None
+    if session.get("provider") == "linkedin":
+        li_access_token = session.get("access_token")
+    else:
+        try:
+            li_resp = (
+                supabase.table("user_sessions")
+                .select("access_token")
+                .eq("user_provider_id", user_id)
+                .eq("provider", "linkedin")
+                .order("last_accessed_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+            if li_resp.data:
+                li_access_token = li_resp.data[0].get("access_token")
+        except Exception as exc:
+            logger.warning("No se pudo resolver el token de LinkedIn para %s: %s", user_id, exc)
+
+    if li_access_token:
+        try:
+            from src.social_apis import get_linkedin_administered_orgs
+            from src.supabase_auth import sync_linkedin_orgs_to_db
+            managed_orgs = get_linkedin_administered_orgs(li_access_token)
+            if managed_orgs:
+                sync_linkedin_orgs_to_db(user_id, managed_orgs)
+        except Exception as sync_exc:
+            logger.warning(
+                "Sincronización de organizaciones de LinkedIn fallida para %s: %s",
+                user_id, sync_exc,
+            )
+
+    from src.supabase_auth import get_user_organizations
+    orgs = get_user_organizations(user_id)
+
+    # Foto de la sesión como FALLBACK para entradas personales: nunca pisa la
+    # identidad de LinkedIn ya resuelta por get_user_organizations.
+    user_info = session.get("user_info") or {}
+    session_picture = user_info.get("picture")
+    if session_picture:
+        for org in orgs:
+            if org.get("is_personal") and not org.get("logo_url"):
+                org["logo_url"] = session_picture
+
+    return orgs
+
+
 # --- Routers & Root ---
 
 @app.get("/")
 async def root():
     return {"message": "AIPost Backend API está en funcionamiento!"}
 
+@app.get("/config")
+async def get_config_endpoint():
+    """
+    Retorna SUPABASE_URL y la clave PÚBLICA (anon/publishable) para que el
+    frontend se conecte a los canales de Realtime Broadcast.
+
+    La clave privilegiada de backend (SUPABASE_KEY) nunca se expone aquí.
+    """
+    from src.core.constants import SUPABASE_PUBLISHABLE_KEY
+    if not SUPABASE_PUBLISHABLE_KEY:
+        logger.critical(
+            "SUPABASE_PUBLISHABLE_KEY / SUPABASE_ANON_KEY no configurada: "
+            "el Realtime del frontend queda deshabilitado. Añádela al .env."
+        )
+    return {
+        "supabase_url": SUPABASE_URL,
+        "supabase_key": SUPABASE_PUBLISHABLE_KEY,
+    }
+
+
 @app.get("/auth/email-confirmed")
 async def email_confirmed_redirect():
     """
-    Redirige al usuario a la página de Streamlit de confirmación de email
+    Redirige al usuario a la página de Next.js de confirmación de email
     después de que hagan clic en el enlace de verificación.
     """
-    # Construye la URL de la página de Streamlit.
-    # El nombre 'Email_Confirmation' viene del nombre del archivo 'Email_Confirmation.py'.
-    streamlit_confirmation_url = f"{BASE_URL}/Email_Confirmation"
-    logger.info(f"Redirigiendo a la página de confirmación de Streamlit: {streamlit_confirmation_url}")
-    return RedirectResponse(streamlit_confirmation_url)
+    frontend_confirmation_url = f"{BASE_URL}/email-confirmed"
+    logger.info(f"Redirigiendo a la página de confirmación de Next.js: {frontend_confirmation_url}")
+    return RedirectResponse(frontend_confirmation_url)
 
 if ROUTERS_LOADED:
+    # Register PDF endpoint directly on app to bypass the global content prefix Authorization header dependency
+    from src.routers.content import get_company_document_pdf_endpoint
+    app.get(
+        "/content/company/documents/pdf",
+        summary="Obtener archivo PDF físicamente",
+        tags=["Company Documents"],
+    )(get_company_document_pdf_endpoint)
+
     app.include_router(
         content_router,
         prefix="/content",

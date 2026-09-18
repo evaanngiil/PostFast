@@ -6,10 +6,11 @@ from src.social_apis import (
     get_linkedin_posts,
 )
 from src.agents.multi_agent.graph import aipost_graph
+from src.services.realtime_service import broadcast_task_status_sync
 from src.content_generation import ContentGenerationResult
 from src.services.api_client import (
     create_post,
-    is_first_company_connection,
+    update_post,
     save_company_profile,
     save_engagement_insights,
     get_company_profile,
@@ -26,6 +27,85 @@ from datetime import datetime, timezone
 import time
 import uuid
 
+try:
+    # Contador de tokens de langchain-core: captura todas las llamadas LLM del
+    # proceso mediante contextvars (incluye las de los nodos del grafo).
+    from langchain_core.callbacks import get_usage_metadata_callback
+except ImportError:  # Compatibilidad con versiones antiguas de langchain-core
+    get_usage_metadata_callback = None
+
+
+def _summarize_usage(usage_metadata: dict) -> dict:
+    """Agrega el usage_metadata por modelo en un resumen total de tokens."""
+    total_input = sum((u or {}).get("input_tokens", 0) for u in usage_metadata.values())
+    total_output = sum((u or {}).get("output_tokens", 0) for u in usage_metadata.values())
+    return {
+        "total_input_tokens": total_input,
+        "total_output_tokens": total_output,
+        "total_tokens": total_input + total_output,
+        "by_model": usage_metadata,
+    }
+
+
+def _paginate_org_posts(access_token: str, org_urn: str, first_page: list, page_size: int, max_posts: int, log_tag: str) -> list:
+    """
+    Completa la paginación de posts de LinkedIn a partir de la primera página.
+
+    Usa get_linkedin_posts directamente para las páginas adicionales (evita
+    re-fetchar org_details y followers en cada página).
+    """
+    all_posts = list(first_page or [])
+    start = page_size
+    while len(all_posts) > 0 and len(all_posts) % page_size == 0 and len(all_posts) < max_posts:
+        try:
+            page_posts = get_linkedin_posts(
+                access_token,
+                target_urn=org_urn,
+                count=page_size,
+                start=start,
+            ) or []
+            if not page_posts:
+                break
+            all_posts.extend(page_posts)
+            start += page_size
+            logger.info(
+                "[%s] Página adicional: +%d posts (total=%d) para %s",
+                log_tag, len(page_posts), len(all_posts), org_urn,
+            )
+            if len(page_posts) < page_size:
+                break
+        except Exception as page_exc:
+            logger.warning(
+                "[%s] Error en paginación (start=%d) para %s: %s. Usando posts ya obtenidos.",
+                log_tag, start, org_urn, page_exc,
+            )
+            break
+    return all_posts
+
+
+@celery_app.task(name="ingest_url_task", bind=True, max_retries=2, default_retry_delay=20)
+def ingest_url_task(self, org_urn: str, url: str):
+    """
+    Ingesta asíncrona de una URL en la base de conocimiento RAG de la organización.
+
+    Se encola automáticamente cuando el usuario aporta una 'URL de referencia'
+    en el formulario de generación (persistencia a largo plazo), además de la
+    ingesta manual desde la Base de Conocimiento.
+    """
+    from src.services.url_ingestion import ingest_url, URLIngestionError
+
+    logger.info("[ingest_url][Task %s] Ingesta de %s para %s", self.request.id, url, org_urn)
+    try:
+        result = ingest_url(org_urn, url)
+        return {"status": "COMPLETED", **result}
+    except URLIngestionError as exc:
+        # Error de contenido/validación: no tiene sentido reintentar.
+        logger.warning("[ingest_url][Task %s] URL no ingerible: %s", self.request.id, exc)
+        return {"status": "SKIPPED", "url": url, "reason": str(exc)}
+    except Exception as exc:
+        logger.exception("[ingest_url][Task %s] Error inesperado: %s", self.request.id, exc)
+        raise self.retry(exc=exc)
+
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
 def publish_post_task(self, platform, account_id, access_token, content, **kwargs):
@@ -36,43 +116,61 @@ def publish_post_task(self, platform, account_id, access_token, content, **kwarg
     :param account_id: Identificador de la cuenta objetivo (ej. URN o IG ID).
     :param access_token: Token de sesión con permisos de publicación.
     :param content: Cuerpo de la publicación.
-    :param kwargs: Argumentos opcionales (ej: 'page_access_token', 'image_url').
+    :param kwargs: Argumentos opcionales (ej: 'page_access_token', 'image_url', 'post_id').
     :returns: Payload de confirmación del estado de publicación.
     :raises Exception: Si la API de red social rechaza el intento (excepto 422 duplicates).
     """
     logger.info(f"[Task ID: {self.request.id}] Iniciando publicacion de post en {platform} - Cuenta: {account_id}")
 
+    post_id = kwargs.get('post_id')
+
+    def save_or_update_post(status: str, published_time=None, image_url=None, link_url=None):
+        if post_id:
+            p_time = published_time.isoformat() if published_time else None
+            update_post(post_id, {
+                "status": status,
+                "published_time": p_time,
+                "image_url": image_url,
+                "link_url": link_url
+            })
+        else:
+            create_post(
+                content=content,
+                status=status,
+                platform=platform,
+                account_id=account_id,
+                published_time=published_time,
+                image_url=image_url,
+                link_url=link_url
+            )
+
     start_time = time.time()
     try:
         result = None
+        plat_lower = platform.lower()
 
-        if platform == "Instagram":
+        if plat_lower == "instagram":
             page_access_token = kwargs.get('page_access_token', access_token)
             ig_user_id = account_id
             image_url = kwargs.get('image_url')
             if not page_access_token: raise ValueError("Falta page_access_token para el post de Instagram")
             if not image_url: raise ValueError("Falta image_url para el post de Instagram")
             result = post_to_instagram(ig_user_id, page_access_token, image_url=image_url, caption=content)
-            create_post(
-                content=content,
+            save_or_update_post(
                 status="published",
-                platform=platform,
-                account_id=account_id,
                 published_time=datetime.now(timezone.utc),
                 image_url=image_url
             )
 
-        elif platform == "LinkedIn":
+        elif plat_lower == "linkedin":
             org_urn = account_id
             try:
-                result = post_to_linkedin_organization(org_urn, access_token, content)
+                result = post_to_linkedin_organization(org_urn, access_token, content, link_url=kwargs.get('link_url'))
                 # Publicación exitosa → registrar en BD
-                create_post(
-                    content=content,
+                save_or_update_post(
                     status="published",
-                    platform=platform,
-                    account_id=account_id,
-                    published_time=datetime.now(timezone.utc)
+                    published_time=datetime.now(timezone.utc),
+                    link_url=kwargs.get('link_url')
                 )
             except Exception as linkedin_exc:
                 error_str = str(linkedin_exc)
@@ -83,23 +181,28 @@ def publish_post_task(self, platform, account_id, access_token, content, **kwarg
                         f"[Task ID: {self.request.id}] LinkedIn reported duplicate (422) for "
                         f"{account_id}. Post was already published. Marking as published in DB."
                     )
-                    create_post(
-                        content=content,
+                    save_or_update_post(
                         status="published",
-                        platform=platform,
-                        account_id=account_id,
-                        published_time=datetime.now(timezone.utc)
+                        published_time=datetime.now(timezone.utc),
+                        link_url=kwargs.get('link_url')
                     )
                     result = {"id": "duplicate_already_published"}
+                else:
+                    raise linkedin_exc
 
         elapsed_time = time.time() - start_time
-        post_id = result.get('id', 'N/A') if result else 'N/A'
-        logger.info(f"[Task ID: {self.request.id}] Publicado exitosamente en {platform} - Cuenta: {account_id}. Post ID: {post_id}. Tiempo: {elapsed_time:.2f}s")
+        post_id_val = result.get('id', 'N/A') if result else 'N/A'
+        logger.info(f"[Task ID: {self.request.id}] Publicado exitosamente en {platform} - Cuenta: {account_id}. Post ID: {post_id_val}. Tiempo: {elapsed_time:.2f}s")
 
-        return {"status": "Completado", "platform": platform, "account_id": account_id, "post_id": post_id, "elapsed_time": elapsed_time}
+        return {"status": "Completado", "platform": platform, "account_id": account_id, "post_id": post_id_val, "elapsed_time": elapsed_time}
 
     except Exception as exc:
         logger.exception(f"[Task ID: {self.request.id}] Fallo la tarea de publicacion para {platform} - Cuenta: {account_id}. Error: {exc}")
+        if post_id:
+            try:
+                update_post(post_id, {"status": "failed"})
+            except Exception as db_err:
+                logger.error(f"Error updating post to failed status: {db_err}")
         return {"status": "Fallido", "platform": platform, "account_id": account_id, "error": str(exc)}
 
 
@@ -171,7 +274,8 @@ def _ensure_complete_company_profile(
                 org_urn, exc,
             )
 
-    if not has_content:
+    is_personal_profile = org_urn and org_urn.startswith("urn:li:person:")
+    if not has_content and not is_personal_profile:
         vanity = profile.get("vanity_name") or selected_account.get("vanityName", "")
         if vanity:
             try:
@@ -281,27 +385,72 @@ def content_generation_task(self, payload_dict=None):
     Inyecta pre-carga de metadata (perfil de empresa y engagement) para minimizar 
     latencia y saltar etapas redundantes del grafo. Procesa estados suspendidos 
     como 'PENDING_USER_INPUT' devolviendo un checkpoint transaccional.
-
-    :param payload_dict: Payload con input estructurado ('access_token', 'query', 'selected_account').
-    :returns: Output consolidado o signal de pausa vía Celery Ignore.
     """
-    thread_id = str(uuid.uuid4())
-    logger.info(f"Iniciando nueva tarea de generacion Multi-Agente {self.request.id} | Thread ID: {thread_id}")
+    thread_id = payload_dict.get("thread_id") if payload_dict and payload_dict.get("thread_id") else str(uuid.uuid4())
+    task_id = self.request.id
+    logger.info(f"Iniciando nueva tarea de generacion Multi-Agente {task_id} | Thread ID: {thread_id}")
+
+    # Emitir broadcast de inicio de tarea
+    broadcast_task_status_sync(
+        task_id, 
+        'STARTED', 
+        {"message": "Iniciando pipeline multi-agente de generación de contenido..."}
+    )
+
+    edit_mode = payload_dict.get("edit_mode", False)
+    link_url = payload_dict.get("link_url")
+    org_urn = payload_dict.get("selected_account", {}).get("urn", "")
+
+    # Ingesta síncrona de la URL de referencia (si existe) para garantizar su presencia
+    # en la base de conocimientos RAG antes de iniciar la generación en el grafo.
+    if link_url and org_urn:
+        try:
+            from src.services.url_ingestion import ingest_url
+            logger.info("[content_generation_task] Indexando URL de referencia de forma síncrona: %s", link_url)
+            ingest_url(org_urn=org_urn, url=link_url)
+            logger.info("[content_generation_task] URL de referencia indexada correctamente en RAG.")
+        except Exception as e:
+            logger.warning("[content_generation_task] Error indexando URL de referencia: %s", e)
 
     initial_state = {
         "linkedin_access_token": payload_dict.get("access_token", ""),
         "user_post_idea": payload_dict.get("query", ""),
         "selected_account": payload_dict.get("selected_account", {}),
+        "link_url": link_url,
+        "task_id": task_id,  # Inyectado para que cada nodo pueda emitir progresos
+        "edit_mode": edit_mode,
+        # Modo edición estructurado (sustituye al string mágico embebido en query)
+        "original_post": payload_dict.get("original_post"),
+        "edit_instructions": payload_dict.get("edit_instructions"),
+        # Configuración de ablación para la evaluación comparativa del TFG
+        "ablation_disabled": payload_dict.get("ablation_disabled") or [],
     }
 
+    if edit_mode:
+        logger.info("[AI LangGraph] Iniciando en MODO EDICIÓN RÁPIDA. Omitiendo nodos de investigación.")
+        initial_state.update({
+            "knowledge_indexed": True,
+            "engagement_insights": {"skipped": True},
+            "engagement_analysis": {"skipped": True},
+            "brand_persona_json": {
+                "name": payload_dict.get("account_name", "AIPost User"),
+                "tone_description": payload_dict.get("tone", "Profesional")
+            },
+            "existing_posts_on_topic": [],
+            "industry_trends": "skipped",
+            "fleshed_out_idea": payload_dict.get("query", ""),
+            "draft_post": None,
+            "fact_check_report": {"overall_pass": True, "claims": [], "skipped": True},
+            "safety_report": {"approved": True, "issues": [], "suggestions": [], "skipped": True}
+        })
+
     # Reconciliación de dependencias (Supabase -> Graph).
-    # Inyecta metadata requerida (identity, content) para posibilitar bypassing del nodo inicial (profiler).
     org_urn = initial_state["selected_account"].get("urn", "")
     access_token = initial_state["linkedin_access_token"]
 
     if org_urn:
         stored_record = get_company_profile(org_urn)
-        profile_data = (stored_record or {}).get("company_profile_data")
+        profile_data = (stored_record or {}).get("company_profile") or (stored_record or {}).get("company_profile_data")
 
         if profile_data and isinstance(profile_data, dict):
             completed, was_modified = _ensure_complete_company_profile(
@@ -318,39 +467,108 @@ def content_generation_task(self, payload_dict=None):
                     "(modificado=%s) — omitiendo el nodo company_profiler.",
                     org_urn, was_modified,
                 )
+                if "brand_persona_json" in completed and completed["brand_persona_json"]:
+                    initial_state["brand_persona_json"] = completed["brand_persona_json"]
+                    logger.info(
+                        "Se inyecto brand_persona_json desde Supabase para %s.",
+                        org_urn,
+                    )
+                # Check if we already have indexed knowledge in Supabase to skip knowledge_ingester
+                try:
+                    from src.services.supabase_client import get_supabase_admin
+                    supabase_adm = get_supabase_admin()
+                    res_knowledge = supabase_adm.table("company_knowledge").select("id").eq("org_urn", org_urn).limit(1).execute()
+                    if res_knowledge.data:
+                        initial_state["knowledge_indexed"] = True
+                        logger.info(
+                            "Se detecto base de conocimientos ya indexada para %s. "
+                            "Omitiendo knowledge_ingester.",
+                            org_urn,
+                        )
+                except Exception as rag_err:
+                    logger.warning(
+                        "No se pudo comprobar si la base de conocimientos RAG ya estaba indexada: %s",
+                        rag_err,
+                    )
         else:
-            logger.info(
-                "No hay company_profile_data utilizable en Supabase para %s — "
-                "el nodo company_profiler se ejecutara.",
-                org_urn,
-            )
-
-
-        existing_engagement = get_engagement_insights(org_urn)
-        if existing_engagement:
-            if existing_engagement.get("aggregate_metrics"):
-                initial_state["engagement_insights"] = existing_engagement
+            if edit_mode:
+                initial_state["company_profile"] = {
+                    "name": payload_dict.get("account_name", "AIPost User"),
+                    "urn": org_urn
+                }
+                logger.info("Modo edición: Inyectando perfil de empresa de respaldo.")
+            else:
                 logger.info(
-                    "Se inyectaron insights de engagement desde Supabase para %s.",
+                    "No hay company_profile_data utilizable en Supabase para %s — "
+                    "el nodo company_profiler se ejecutara.",
                     org_urn,
                 )
-            if existing_engagement.get("top_performing_posts"):
-                initial_state["top_performing_posts"] = existing_engagement["top_performing_posts"]
-            if existing_engagement.get("engagement_analysis"):
-                initial_state["engagement_analysis"] = existing_engagement["engagement_analysis"]
-                logger.info(
-                    "Se inyecto analisis de engagement desde Supabase para %s.",
-                    org_urn,
-                )
+
+        if not edit_mode:
+            existing_engagement = get_engagement_insights(org_urn)
+            if existing_engagement:
+                if existing_engagement.get("aggregate_metrics"):
+                    initial_state["engagement_insights"] = existing_engagement
+                    logger.info(
+                        "Se inyectaron insights de engagement desde Supabase para %s.",
+                        org_urn,
+                    )
+                if existing_engagement.get("top_performing_posts"):
+                    initial_state["top_performing_posts"] = existing_engagement["top_performing_posts"]
+                if existing_engagement.get("engagement_analysis"):
+                    initial_state["engagement_analysis"] = existing_engagement["engagement_analysis"]
+                    logger.info(
+                        "Se inyecto analisis de engagement desde Supabase para %s.",
+                        org_urn,
+                    )
+
+    selected_skill_ids = payload_dict.get("selected_skills") or []
+    single_skill_id = payload_dict.get("skill_id")
+    if single_skill_id and single_skill_id not in selected_skill_ids:
+        selected_skill_ids = list(selected_skill_ids)
+        selected_skill_ids.append(single_skill_id)
+
+    selected_skills_list = []
+    from src.services.api_client import get_skill_by_id
+    for sid in selected_skill_ids:
+        skill_data = get_skill_by_id(sid)
+        if skill_data:
+            selected_skills_list.append(skill_data)
+            logger.info(f"Inyectada habilidad seleccionada: {skill_data.get('name')} ({sid})")
+        else:
+            logger.warning(f"No se encontró la habilidad con ID: {sid}")
+
+    initial_state["selected_skills"] = selected_skills_list
+    if selected_skills_list:
+        initial_state["selected_skill"] = selected_skills_list[0]
+    else:
+        initial_state["selected_skill"] = None
 
     config = {"configurable": {"thread_id": thread_id}}
 
     try:
-        # Invoca el worker tolerante a caídas de TLS (stale SSL)
-        result_state = _invoke_with_retry(
-            lambda: aipost_graph.invoke(initial_state, config=config),
-            logger=logger,
-        )
+        # Invoca el worker de LangGraph midiendo el consumo real de tokens
+        # de todas las llamadas LLM del pipeline (observabilidad de coste).
+        usage_summary = {}
+        if get_usage_metadata_callback is not None:
+            with get_usage_metadata_callback() as usage_cb:
+                result_state = _invoke_with_retry(
+                    lambda: aipost_graph.invoke(initial_state, config=config),
+                    logger=logger,
+                )
+            usage_summary = _summarize_usage(usage_cb.usage_metadata)
+            logger.info(
+                "[tokens] Tarea %s: %s tokens totales (in=%s / out=%s)",
+                task_id,
+                usage_summary.get("total_tokens"),
+                usage_summary.get("total_input_tokens"),
+                usage_summary.get("total_output_tokens"),
+            )
+        else:
+            result_state = _invoke_with_retry(
+                lambda: aipost_graph.invoke(initial_state, config=config),
+                logger=logger,
+            )
 
         state_snapshot = aipost_graph.get_state(config)
 
@@ -358,10 +576,23 @@ def content_generation_task(self, payload_dict=None):
             logger.info("Grafo pausado para revision humana")
 
             draft_post = result_state.get("draft_post", {})
-            draft_content = draft_post.get("content", "Borrador NO disponible.")
+            draft_content = draft_post.get("content", "Borrador NO disponible.") if draft_post else "Borrador NO disponible."
 
             if isinstance(draft_content, str):
                 draft_content = draft_content.replace("\\n", "\n")
+
+            # Emitir broadcast de pausa interactiva HITL
+            broadcast_task_status_sync(
+                task_id,
+                'PENDING_USER_INPUT',
+                {
+                    'checkpoint': {'thread_id': thread_id},
+                    'draft_content': draft_content,
+                    'fact_check_report': result_state.get('fact_check_report'),
+                    'safety_report': result_state.get('safety_report'),
+                    'knowledge_gap': result_state.get('knowledge_gap'),
+                }
+            )
 
             self.update_state(
                 state='PENDING_USER_INPUT',
@@ -373,19 +604,42 @@ def content_generation_task(self, payload_dict=None):
             )
             raise Ignore()
 
-        final_post = result_state.get("draft_post", {}).get("content", "")
+        final_post = result_state.get("draft_post", {}).get("content", "") if result_state.get("draft_post") else ""
 
         if isinstance(final_post, str):
             final_post = final_post.replace("\\n", "\n")
+
+        # Emitir broadcast de completado
+        broadcast_task_status_sync(
+            task_id,
+            'COMPLETED',
+            {
+                'final_post': final_post,
+                'fact_check_report': result_state.get('fact_check_report'),
+                'safety_report': result_state.get('safety_report'),
+                'knowledge_gap': result_state.get('knowledge_gap'),
+                'token_usage': usage_summary,
+            }
+        )
+
         return {
             "final_post": final_post,
-            "status": "COMPLETED"
+            "status": "COMPLETED",
+            "token_usage": usage_summary,
         }
 
     except Ignore:
         raise
     except Exception as e:
         logger.exception(f"Error en el grafo multi-agente: {e}")
+        # Emitir broadcast de fallo
+        broadcast_task_status_sync(
+            task_id,
+            'FAILED',
+            {
+                'error': str(e)
+            }
+        )
         raise
 
 
@@ -429,6 +683,10 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
         has_llm_analysis = bool(
             existing_profile.get("recent_posts_analysis")
             or (
+                isinstance(existing_profile.get("company_profile"), dict)
+                and existing_profile["company_profile"].get("recent_posts_analysis")
+            )
+            or (
                 isinstance(existing_profile.get("company_profile_data"), dict)
                 and existing_profile["company_profile_data"].get("recent_posts_analysis")
             )
@@ -438,7 +696,7 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
         # con 0-1 posts). Si company_profile_data tiene campos enriquecidos (name, industry,
         # about_us_content...) el perfil ya fue procesado aunque recent_posts_analysis esté
         # vacío y los contadores sean 0.
-        cpd = existing_profile.get("company_profile_data") or {}
+        cpd = existing_profile.get("company_profile") or existing_profile.get("company_profile_data") or {}
         has_enriched_profile = isinstance(cpd, dict) and bool(
             cpd.get("industry")
             or cpd.get("about_us_content")
@@ -491,7 +749,7 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
         # 1. LinkedIn API batch (con paginación hasta MAX_POSTS)
         # Si hay raw_batch_data cacheado en Supabase (FASE A previa OK, FASE B fallida),
         # lo reutilizamos directamente para no consumir cuota de LinkedIn API.
-        MAX_POSTS = 100  # límite razonable; LinkedIn /posts devuelve máx 20 por página
+        MAX_POSTS = 1000  # límite razonable; LinkedIn /posts devuelve máx 20 por página
         PAGE_SIZE = 20
 
         cached_batch = existing_profile.get("raw_batch_data") if (existing_profile and reuse_cached_batch) else None
@@ -510,37 +768,13 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
                 org_urn=org_urn,
                 posts_count=PAGE_SIZE,
             )
-            all_posts = list(batch_data.get("posts") or [])
-
-            # Paginación: usar get_linkedin_posts directamente para páginas adicionales
-            # (evita re-fetchar org_details y followers en cada página)
-            start = PAGE_SIZE
-            while len(all_posts) % PAGE_SIZE == 0 and len(all_posts) < MAX_POSTS:
-                try:
-                    page_posts = get_linkedin_posts(
-                        access_token,
-                        target_urn=org_urn,
-                        count=PAGE_SIZE,
-                        start=start,
-                    ) or []
-                    if not page_posts:
-                        break
-                    all_posts.extend(page_posts)
-                    start += PAGE_SIZE
-                    logger.info(
-                        "[company_batch] Página adicional: +%d posts (total=%d) para '%s'",
-                        len(page_posts), len(all_posts), org_name,
-                    )
-                    if len(page_posts) < PAGE_SIZE:
-                        break
-                except Exception as page_exc:
-                    logger.warning(
-                        "[company_batch] Error en paginación (start=%d) para %s: %s. Usando posts ya obtenidos.",
-                        start, org_urn, page_exc,
-                    )
-                    break
-
-            batch_data["posts"] = all_posts
+            batch_data["posts"] = _paginate_org_posts(
+                access_token, org_urn,
+                first_page=batch_data.get("posts"),
+                page_size=PAGE_SIZE,
+                max_posts=MAX_POSTS,
+                log_tag="company_batch",
+            )
 
         org_details    = batch_data.get("organization") or {}
         posts          = batch_data.get("posts") or []
@@ -606,7 +840,6 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
                     )
 
                 mock_state: AgentState = {
-                    "messages": [],
                     "linkedin_access_token": access_token,
                     "user_post_idea": "",
                     "selected_account": {
@@ -618,7 +851,6 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
                     "brand_persona_json": None,
                     "fleshed_out_idea": None,
                     "draft_post": None,
-                    "next_agent": None,
                     "engagement_insights": None,
                     "top_performing_posts": None,
                     "engagement_analysis": None,
@@ -720,6 +952,20 @@ def company_batch_extraction_task(self, org_urn: str, org_name: str, access_toke
                 self.request.id, org_urn, eng_exc,
             )
 
+        # FASE D: Ingesta en Vector Store RAG (Simulación corporativa y conocimiento)
+        try:
+            if company_profile_data is not None:
+                logger.info(f"[company_batch][Task {self.request.id}] Iniciando Fase D: Indexación vectorial RAG...")
+                from src.agents.multi_agent.nodes.knowledge_ingester import run_knowledge_ingester_node
+                mock_state["company_profile"] = company_profile_data
+                mock_state["top_performing_posts"] = mock_state.get("top_performing_posts", [])
+                run_knowledge_ingester_node(mock_state)
+                logger.info(f"[company_batch][Task {self.request.id}] Fase D: Indexación RAG completada.")
+        except Exception as rag_exc:
+            logger.warning(
+                f"[company_batch][Task {self.request.id}] Error en Fase D (indexación RAG): {rag_exc}"
+            )
+
         return {
             "status": "COMPLETED",
             "org_urn": org_urn,
@@ -809,15 +1055,25 @@ def company_batch_refresh_task(self, org_urn: str, org_name: str, access_token: 
             "[batch_refresh] Changes confirmed (%s). Running full batch for %s...",
             report.reason_str(), org_urn,
         )
+        MAX_POSTS = 1000
+        PAGE_SIZE = 20
         full_batch = get_linkedin_company_batch_data(
             access_token=access_token,
             org_urn=org_urn,
-            posts_count=20,
+            posts_count=PAGE_SIZE,
         )
 
-        posts          = full_batch.get("posts") or []
         org_details    = full_batch.get("organization") or {}
         follower_count = full_batch.get("follower_count")
+
+        posts = _paginate_org_posts(
+            access_token, org_urn,
+            first_page=full_batch.get("posts"),
+            page_size=PAGE_SIZE,
+            max_posts=MAX_POSTS,
+            log_tag="batch_refresh",
+        )
+        full_batch["posts"] = posts
 
         logger.info(
             "[batch_refresh] Full batch: org=%s, posts=%d, followers=%s",
@@ -934,6 +1190,20 @@ def company_batch_refresh_task(self, org_urn: str, org_name: str, access_token: 
                 task_id, org_urn, eng_exc,
             )
 
+        # FASE D: Re-indexación RAG incremental
+        try:
+            if company_profile_data is not None:
+                logger.info(f"[batch_refresh][Task {task_id}] Iniciando re-indexación RAG incremental...")
+                from src.agents.multi_agent.nodes.knowledge_ingester import run_knowledge_ingester_node
+                mock_state["company_profile"] = company_profile_data
+                mock_state["top_performing_posts"] = mock_state.get("top_performing_posts", [])
+                run_knowledge_ingester_node(mock_state)
+                logger.info(f"[batch_refresh][Task {task_id}] Re-indexación RAG incremental completada.")
+        except Exception as rag_exc:
+            logger.warning(
+                f"[batch_refresh][Task {task_id}] Error durante re-indexación RAG incremental: {rag_exc}"
+            )
+
         return {
             "status": "REFRESHED",
             "org_urn": org_urn,
@@ -961,20 +1231,24 @@ def resume_content_generation_task(self, checkpoint, payload):
     Opera mediante re-inserción de state-deltas y ejecución explícita del pipeline desde 
     el nodo de 'human_review'. Si el revisor demanda mayores ajustes, suspende 
     nuevamente la tarea delegando el control a Celery.
-
-    :param checkpoint: Hito temporal (thread_id) de re-entrada.
-    :param payload: Diccionario conteniendo dictados del usuario ('feedback').
-    :returns: Estructura ContentGenerationResult en caso de bypass (aprobación completa).
     """
     thread_id = checkpoint.get('thread_id')
     feedback = payload.get('feedback', '')
+    task_id = self.request.id
     config = {
         "configurable": {
             "thread_id": thread_id
         }
     }
 
-    logger.info(f"Renaudando la tarea {self.request.id} con feedback: {feedback} | Thread ID: {thread_id}")
+    logger.info(f"Renaudando la tarea {task_id} con feedback: {feedback} | Thread ID: {thread_id}")
+
+    # Emitir broadcast de reanudación
+    broadcast_task_status_sync(
+        task_id,
+        'STARTED',
+        {"message": f"Procesando feedback recibido: '{feedback[:60]}...'"}
+    )
 
     try:
         def _update_and_invoke(update_values):
@@ -985,16 +1259,25 @@ def resume_content_generation_task(self, checkpoint, payload):
                 return aipost_graph.invoke(None, config=config)
             return _invoke_with_retry(_do, logger=logger)
 
-        if feedback.strip().lower() == 'aprobar':
-            final_state = _update_and_invoke({"user_feedback": None})
-        else:
-            final_state = _invoke_with_retry(
+        usage_summary = {}
+
+        def _run_resume():
+            if feedback.strip().lower() == 'aprobar':
+                return _update_and_invoke({"user_feedback": None})
+            return _invoke_with_retry(
                 lambda: (
                     aipost_graph.update_state(config, {"user_feedback": feedback}),
                     aipost_graph.invoke(None, config=config)
                 )[1],
                 logger=logger
             )
+
+        if get_usage_metadata_callback is not None:
+            with get_usage_metadata_callback() as usage_cb:
+                final_state = _run_resume()
+            usage_summary = _summarize_usage(usage_cb.usage_metadata)
+        else:
+            final_state = _run_resume()
 
         if final_state is None:
             state_snapshot = aipost_graph.get_state(config)
@@ -1009,9 +1292,23 @@ def resume_content_generation_task(self, checkpoint, payload):
                 draft_content = draft_content.replace("\\n", "\n")
 
             logger.info(
-                "Grafo pausado de nuevo para revision humana (post-feedback) "
-                "| Thread ID: %s", thread_id,
+                "Grafo pausado de nuevo para revision humana (post-feedback) | Thread ID: %s", 
+                thread_id,
             )
+
+            # Emitir broadcast de pausa interactiva HITL recurrente
+            broadcast_task_status_sync(
+                task_id,
+                'PENDING_USER_INPUT',
+                {
+                    'checkpoint': {'thread_id': thread_id},
+                    'draft_content': draft_content,
+                    'fact_check_report': final_state.get('fact_check_report'),
+                    'safety_report': final_state.get('safety_report'),
+                    'knowledge_gap': final_state.get('knowledge_gap'),
+                }
+            )
+
             self.update_state(
                 state='PENDING_USER_INPUT',
                 meta={
@@ -1028,10 +1325,23 @@ def resume_content_generation_task(self, checkpoint, payload):
         if isinstance(final_content, str):
             final_content = final_content.replace("\\n", "\n")
 
+        # Emitir broadcast de completado
+        broadcast_task_status_sync(
+            task_id,
+            'COMPLETED',
+            {
+                'final_post': final_content,
+                'fact_check_report': final_state.get('fact_check_report'),
+                'safety_report': final_state.get('safety_report'),
+                'knowledge_gap': final_state.get('knowledge_gap'),
+                'token_usage': usage_summary,
+            }
+        )
+
         result = ContentGenerationResult(
             final_post=final_content,
-            token_usage_per_node={},
-            total_tokens_used=0
+            token_usage_per_node=usage_summary.get("by_model", {}),
+            total_tokens_used=usage_summary.get("total_tokens", 0)
         )
 
         return result.__dict__
@@ -1039,5 +1349,13 @@ def resume_content_generation_task(self, checkpoint, payload):
     except Ignore:
         raise
     except Exception as e:
-        logger.exception(f"Error al reanudar la tarea {self.request.id}: {e}")
+        logger.exception(f"Error al reanudar la tarea {task_id}: {e}")
+        # Emitir broadcast de fallo
+        broadcast_task_status_sync(
+            task_id,
+            'FAILED',
+            {
+                'error': str(e)
+            }
+        )
         raise

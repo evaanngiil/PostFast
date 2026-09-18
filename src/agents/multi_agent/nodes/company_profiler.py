@@ -9,7 +9,6 @@
 from __future__ import annotations
 
 import datetime
-import re
 import time
 from src.core.logger import logger
 from typing import Any, Dict, List, Optional
@@ -403,6 +402,7 @@ def _merge_org_details(profile: Dict[str, Any], org: Optional[Dict[str, Any]]) -
         "foundedOn": "founded",
         "specialties": "specialties",
         "followerCount": "followers",
+        "description": "about_us_content",
     }
 
     for api_key, profile_key in field_map.items():
@@ -473,12 +473,26 @@ def run_company_profiler_node(
     if not selected_account:
         raise ValueError("'selected_account' is required in state.")
 
+    company_name = selected_account.get("name") or selected_account.get("vanityName") or "Organización"
+    task_id = state.get("task_id")
+    if task_id:
+        from src.services.realtime_service import broadcast_task_status_sync
+        broadcast_task_status_sync(task_id, "RUNNING", {
+            "node": "Company Profiler",
+            "message": f"Analizando y construyendo perfil de la marca {company_name}..."
+        })
+
     vanity_name: Optional[str] = selected_account.get("vanityName")
     if not vanity_name:
         raise ValueError("'vanityName' is required in selected_account.")
 
     org_urn: Optional[str] = selected_account.get("urn")
     company_name: str = selected_account.get("name") or vanity_name
+
+    # If it is a personal profile, use vanity_name (user's real name) instead of generic "Perfil Personal"
+    if org_urn and org_urn.startswith("urn:li:person:"):
+        if vanity_name and vanity_name != "perfil_personal" and vanity_name != "Perfil Personal":
+            company_name = vanity_name
 
     access_token: Optional[str] = state.get("linkedin_access_token")
     if not access_token:
@@ -611,8 +625,12 @@ def run_company_profiler_node(
         logger.info("No hay posts para analizar.")
 
     # 5. Public page scraping (enrichment / fallback)
-    medium_llm = ChatGoogleGenerativeAI(model=MEDIUM_LLM, google_api_key=GENAI_API_KEY, temperature=0.0)
-    scraped_data = _scrape_and_extract(vanity_name, medium_llm)
+    if org_urn and org_urn.startswith("urn:li:person:"):
+        logger.info("Bypassing public company page scraping for personal profile URN: %s", org_urn)
+        scraped_data = None
+    else:
+        medium_llm = ChatGoogleGenerativeAI(model=MEDIUM_LLM, google_api_key=GENAI_API_KEY, temperature=0.0)
+        scraped_data = _scrape_and_extract(vanity_name, medium_llm)
 
     # 6. Merge: API > scrape > session defaults
     profile_dict["recent_posts_analysis"] = posts_analysis

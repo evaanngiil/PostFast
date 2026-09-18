@@ -1,8 +1,6 @@
 from typing import Dict, List
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_community.llms import llamacpp
 from langchain_core.language_models import BaseLanguageModel
-from langchain_openai import OpenAI
 
 from src.core.constants import GENAI_API_KEY
 from src.core.logger import logger

@@ -1,12 +1,10 @@
 import uuid as _uuid_mod
 
-import streamlit as st
-from supabase import AuthApiError, PostgrestAPIError, create_client, Client
+from supabase import PostgrestAPIError, create_client, Client
 from typing import Optional
-import requests
 
 from src.core.logger import logger
-from src.core.constants import FASTAPI_URL, BASE_URL, SUPABASE_URL, SUPABASE_KEY
+from src.core.constants import SUPABASE_URL, SUPABASE_KEY
 from src.services.supabase_client import get_supabase_admin
 
 # Cliente dedicado para aislar peticiones Auth y prevenir leaks del JWT en data queries.
@@ -27,21 +25,45 @@ def _get_auth_client() -> Client:
         logger.info("Supabase AUTH client created (isolated from data queries)")
     return _auth_client
 
+def cond_cache_data(ttl=300, show_spinner=False):
+    """
+    Decorador no-op, legado de la caché de Streamlit (frontend ya retirado).
+
+    Se conserva la firma y el método `.clear()` para no tocar los numerosos
+    call-sites que invalidaban aquella caché (`get_user_profile.clear()`).
+    """
+    def decorator(fn):
+        def wrapper(*args, **kwargs):
+            return fn(*args, **kwargs)
+        wrapper.clear = lambda: None
+        return wrapper
+    return decorator
+
 # Caché estática del perfil para evitar queries repetidas durante el ciclo de vida del router.
-@st.cache_data(ttl=300, show_spinner=False)  # Cache 5 min
+@cond_cache_data(ttl=300, show_spinner=False)  # Cache 5 min
 def get_user_profile(user_id: str) -> Optional[dict]:
     """
     Consulta public.user_profiles usando privilegios de administrador.
 
-    :param user_id: UUID string correspondiente al usuario auth.users.
+    :param user_id: UUID string correspondiente al usuario o ID de proveedor externo (LinkedIn).
     :returns: Diccionario del perfil, o None si no existe o falla.
     """
-    # Validación preventiva: bloquear IDs de plataformas externas (ej. LinkedIn OAuth IDs cortos)
-    # que provoquen excepciones de tipo 'invalid input syntax for type uuid' en PostgreSQL.
+    is_uuid = True
     try:
         _uuid_mod.UUID(str(user_id))
     except (ValueError, AttributeError):
-        logger.warning(f"get_user_profile recibio un ID no-UUID: {user_id!r}. Retornando None.")
+        is_uuid = False
+
+    if not is_uuid:
+        try:
+            sb = get_supabase_admin()
+            result = sb.table("user_profiles").select("*").eq("linkedin_provider_id", user_id).maybe_single().execute()
+            if result and result.data:
+                logger.info(f"get_user_profile: Resolving non-UUID ID {user_id!r} to UUID profile {result.data['id']}")
+                return result.data
+        except Exception as e:
+            logger.error(f"Error buscando perfil por linkedin_provider_id={user_id}: {e}")
+        logger.warning(f"get_user_profile recibio un ID no-UUID: {user_id!r} y no se pudo resolver. Retornando None.")
         return None
 
     try:
@@ -53,7 +75,6 @@ def get_user_profile(user_id: str) -> Optional[dict]:
             logger.warning(f"No se encontro perfil para {user_id}. Es un usuario nuevo.")
             return None
         logger.error(f"Error de Postgrest al obtener perfil: {e}")
-        st.error(f"Error al cargar el perfil: {e.message}")
         return None
     except Exception as e:
         logger.error(f"Error inesperado al obtener perfil: {e}")
@@ -68,11 +89,20 @@ def get_user_organizations(user_id: str) -> list:
     :param user_id: Identificador UUID del dueño.
     :returns: Lista de diccionarios con las organizaciones de BD.
     """
+    is_uuid = True
     try:
         _uuid_mod.UUID(str(user_id))
     except (ValueError, AttributeError):
-        logger.warning(f"get_user_organizations recibio un ID no-UUID: {user_id!r}")
-        return []
+        is_uuid = False
+
+    if not is_uuid:
+        profile = get_user_profile(user_id)
+        if profile:
+            user_id = profile["id"]
+        else:
+            logger.warning(f"get_user_organizations recibio un ID no-UUID y no se pudo resolver a perfil: {user_id!r}")
+            return []
+
     try:
         sb = get_supabase_admin()
         resp = (
@@ -82,7 +112,81 @@ def get_user_organizations(user_id: str) -> list:
             .order("created_at")
             .execute()
         )
-        return resp.data or []
+        orgs = resp.data or []
+        # Load logos from company_profiles for all organization URNs
+        org_urns = [o["org_urn"] for o in orgs if o.get("org_urn")]
+        logo_map = {}
+        if org_urns:
+            try:
+                profiles_resp = (
+                    sb.table("company_profiles")
+                    .select("org_urn, raw_batch_data, company_profile")
+                    .in_("org_urn", org_urns)
+                    .execute()
+                )
+                for p in (profiles_resp.data or []):
+                    logo = None
+                    comp_prof = p.get("company_profile") or {}
+                    raw_data = p.get("raw_batch_data") or {}
+                    if comp_prof.get("logo_url"):
+                        logo = comp_prof["logo_url"]
+                    elif raw_data.get("logo_url"):
+                        logo = raw_data["logo_url"]
+                    elif "organization" in raw_data and raw_data["organization"]:
+                        logo = raw_data["organization"].get("logo_url")
+                    
+                    if logo:
+                        logo_map[p["org_urn"]] = logo
+            except Exception as pe:
+                logger.warning(f"Error loading company profiles logos: {pe}")
+
+        profile = get_user_profile(user_id)
+        if profile:
+            first_name = profile.get("first_name") or ""
+            last_name = profile.get("last_name") or ""
+            avatar_url = profile.get("avatar_url")
+            linkedin_id = profile.get("linkedin_provider_id")
+
+            # El perfil PERSONAL representa la cuenta de LinkedIn: si está
+            # vinculada, muestra el nombre y foto reales de LinkedIn (no los
+            # datos de registro de la plataforma).
+            li_first, li_last, li_picture = "", "", None
+            if linkedin_id:
+                try:
+                    sess_resp = (
+                        sb.table("user_sessions")
+                        .select("user_info")
+                        .eq("user_provider_id", user_id)
+                        .eq("provider", "linkedin")
+                        .order("last_accessed_at", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+                    li_info = (sess_resp.data[0].get("user_info") if sess_resp.data else {}) or {}
+                    full_name = (li_info.get("name") or "").split(" ", 1)
+                    li_first = li_info.get("given_name") or (full_name[0] if full_name else "")
+                    li_last = li_info.get("family_name") or (full_name[1] if len(full_name) > 1 else "")
+                    li_picture = li_info.get("picture")
+                except Exception as li_err:
+                    logger.warning(f"No se pudo leer la identidad de LinkedIn para {user_id}: {li_err}")
+
+            for org in orgs:
+                org["first_name"] = first_name
+                org["last_name"] = last_name
+                if org.get("is_personal"):
+                    if li_first or li_last:
+                        org["first_name"] = li_first or first_name
+                        org["last_name"] = li_last or last_name
+                    if li_picture or avatar_url:
+                        org["logo_url"] = li_picture or avatar_url
+                    if linkedin_id:
+                        org["org_urn"] = f"urn:li:person:{linkedin_id}"
+                else:
+                    org["logo_url"] = logo_map.get(org.get("org_urn"))
+        else:
+            for org in orgs:
+                org["logo_url"] = logo_map.get(org.get("org_urn"))
+        return orgs
     except Exception as e:
         logger.error(f"Error obteniendo organizaciones para {user_id}: {e}")
         return []
@@ -120,11 +224,25 @@ def create_organization(user_id: str, org_data: dict) -> Optional[dict]:
     """
     Crea un nuevo tenant y lo configura inmediatamente como activo.
 
-    :param user_id: UUID del dueño.
+    :param user_id: UUID del dueño o ID de proveedor externo.
     :param org_data: Payload con la información del negocio (company_name, etc).
     :returns: Diccionario de la nueva organización insertada, o None si falla.
     """
     try:
+        is_uuid = True
+        try:
+            _uuid_mod.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            is_uuid = False
+
+        if not is_uuid:
+            profile = get_user_profile(user_id)
+            if profile:
+                user_id = profile["id"]
+            else:
+                logger.error(f"create_organization recibio un ID no-UUID y no se pudo resolver a perfil: {user_id!r}")
+                return None
+
         sb = get_supabase_admin()
 
         existing_profile = get_user_profile(user_id)
@@ -194,6 +312,20 @@ def set_active_organization(user_id: str, org_id: str) -> bool:
     :returns: True si la actualización es exitosa, de lo contrario False.
     """
     try:
+        is_uuid = True
+        try:
+            _uuid_mod.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            is_uuid = False
+
+        if not is_uuid:
+            profile = get_user_profile(user_id)
+            if profile:
+                user_id = profile["id"]
+            else:
+                logger.error(f"set_active_organization recibio un ID no-UUID y no se pudo resolver: {user_id!r}")
+                return False
+
         sb = get_supabase_admin()
         sb.table("user_profiles").update(
             {"active_org_id": str(org_id)}
@@ -211,12 +343,26 @@ def complete_onboarding_for_all_orgs(user_id: str, role: str, goals: list) -> bo
     """
     Finaliza el proceso de onboarding forzando los estados y flags requeridos.
 
-    :param user_id: UUID del usuario.
+    :param user_id: UUID del usuario o ID de proveedor externo.
     :param role: Puesto o rol introducido por el usuario.
     :param goals: Lista de metas de negocio a alcanzar.
     :returns: True si el flujo completo se aplicó, False si algo falló.
     """
     try:
+        is_uuid = True
+        try:
+            _uuid_mod.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            is_uuid = False
+
+        if not is_uuid:
+            profile = get_user_profile(user_id)
+            if profile:
+                user_id = profile["id"]
+            else:
+                logger.error(f"complete_onboarding_for_all_orgs recibio un ID no-UUID y no se pudo resolver a perfil: {user_id!r}")
+                return False
+
         org_data = {
             "role_in_company": role,
             "user_goals": goals,
@@ -253,26 +399,6 @@ def complete_onboarding_for_all_orgs(user_id: str, role: str, goals: list) -> bo
         except Exception as e:
             logger.warning(f"complete_onboarding: no se pudo actualizar user_profiles.has_completed_onboarding: {e}")
 
-        # Ingesta reactiva de tenants desde memoria hacia DB post-onboarding.
-        # Cubre el edge case donde el usuario autoriza LinkedIn antes de completar el profile.
-        try:
-            import streamlit as _st
-            user_accounts = _st.session_state.get("user_accounts") or []
-            linkedin_orgs = [
-                a for a in user_accounts
-                if isinstance(a, dict)
-                and a.get("type") != "profile"
-                and a.get("urn", "").startswith("urn:li:organization:")
-            ]
-            if linkedin_orgs:
-                sync_linkedin_orgs_to_db(user_id, linkedin_orgs)
-                logger.info(
-                    f"[onboarding] Synced {len(linkedin_orgs)} LinkedIn orgs "
-                    f"with onboarding data for user {user_id}"
-                )
-        except Exception as e:
-            logger.warning(f"complete_onboarding: sync_linkedin_orgs_to_db failed: {e}")
-
         logger.info(f"Onboarding completado para user {user_id}, org {new_org['id']}")
         return True
     except Exception as e:
@@ -284,13 +410,27 @@ def update_profile_email(user_id: str, email: str) -> bool:
     """
     Sobrescribe la dirección email en BD si es válida y real.
 
-    :param user_id: UUID en string.
+    :param user_id: UUID en string o ID de proveedor externo.
     :param email: Nueva dirección a consolidar.
     :returns: True en caso de éxito, False si es placeholder o error.
     """
     if not email or '@linkedin.placeholder' in email:
         return False
     try:
+        is_uuid = True
+        try:
+            _uuid_mod.UUID(str(user_id))
+        except (ValueError, AttributeError):
+            is_uuid = False
+
+        if not is_uuid:
+            profile = get_user_profile(user_id)
+            if profile:
+                user_id = profile["id"]
+            else:
+                logger.error(f"update_profile_email recibio un ID no-UUID y no se pudo resolver a perfil: {user_id!r}")
+                return False
+
         sb = get_supabase_admin()
         sb.table("user_profiles").update(
             {"email": email}
@@ -333,11 +473,19 @@ def sync_linkedin_orgs_to_db(user_id: str, linkedin_orgs: list) -> None:
     if not linkedin_orgs:
         return
 
+    is_uuid = True
     try:
         _uuid_mod.UUID(str(user_id))
     except (ValueError, AttributeError):
-        logger.warning(f"sync_linkedin_orgs_to_db: invalid user_id {user_id!r}")
-        return
+        is_uuid = False
+
+    if not is_uuid:
+        profile = get_user_profile(user_id)
+        if profile:
+            user_id = profile["id"]
+        else:
+            logger.warning(f"sync_linkedin_orgs_to_db: invalid user_id {user_id!r} and could not resolve to profile")
+            return
 
     try:
         sb = get_supabase_admin()
@@ -410,12 +558,87 @@ def sync_linkedin_orgs_to_db(user_id: str, linkedin_orgs: list) -> None:
 # este handler orquesta el upsert local buscando por linkedin_provider_id
 # exacto, ejecutando account linking vía email si coincide con un perfil existente,
 # o forzando un shadow-user con UUID válido en su defecto.
-def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optional[dict]:
+def _migrate_user_assets(sb, from_user_id: str, to_user_id: str) -> None:
+    """
+    Migra los activos de negocio de un perfil a otro al re-vincular LinkedIn.
+
+    Cuando un provider_id de LinkedIn se desvincula del perfil A para vincularse
+    al perfil B, las organizaciones (y sus vínculos de autorización) deben viajar
+    con él: de lo contrario el usuario pierde el acceso a sus empresas, RAG,
+    skills e histórico (todos cuelgan del org_urn).
+    """
+    if not from_user_id or not to_user_id or from_user_id == to_user_id:
+        return
+    try:
+        # 1. Organizaciones no personales: transferencia directa de propiedad.
+        moved = (
+            sb.table("organizations")
+            .update({"user_id": to_user_id})
+            .eq("user_id", from_user_id)
+            .eq("is_personal", False)
+            .execute()
+        )
+        moved_rows = moved.data or []
+
+        # 2. Organización personal: si el destino ya tiene una, fusionar el org_urn
+        #    (si le falta) y eliminar la del origen para no duplicar.
+        src_personal = (
+            sb.table("organizations").select("*")
+            .eq("user_id", from_user_id).eq("is_personal", True).execute()
+        ).data or []
+        dst_personal = (
+            sb.table("organizations").select("*")
+            .eq("user_id", to_user_id).eq("is_personal", True).execute()
+        ).data or []
+
+        for src in src_personal:
+            if dst_personal:
+                dst = dst_personal[0]
+                if src.get("org_urn") and not dst.get("org_urn"):
+                    sb.table("organizations").update({"org_urn": src["org_urn"]}).eq("id", dst["id"]).execute()
+                # Repuntar active_org_id si alguien referencia la fila que se elimina
+                sb.table("user_profiles").update({"active_org_id": dst["id"]}).eq("active_org_id", src["id"]).execute()
+                sb.table("organizations").delete().eq("id", src["id"]).execute()
+            else:
+                sb.table("organizations").update({"user_id": to_user_id}).eq("id", src["id"]).execute()
+                moved_rows.append(src)
+
+        # 3. El perfil de origen no debe apuntar a una org que ya no posee.
+        owned = (
+            sb.table("organizations").select("id").eq("user_id", from_user_id).execute()
+        ).data or []
+        profile_row = (
+            sb.table("user_profiles").select("active_org_id").eq("id", from_user_id).execute()
+        ).data or []
+        if profile_row and profile_row[0].get("active_org_id") and profile_row[0]["active_org_id"] not in {o["id"] for o in owned}:
+            sb.table("user_profiles").update({"active_org_id": None}).eq("id", from_user_id).execute()
+
+        # 4. Vínculos de autorización multi-tenant (user_organizations).
+        all_urns = [r.get("org_urn") for r in moved_rows if r.get("org_urn")]
+        for urn in all_urns:
+            try:
+                sb.table("user_organizations").upsert(
+                    {"user_provider_id": to_user_id, "provider": "linkedin", "org_urn": urn},
+                    on_conflict="user_provider_id,org_urn",
+                ).execute()
+            except Exception as link_err:
+                logger.warning(f"[migrate_assets] No se pudo vincular {urn} a {to_user_id}: {link_err}")
+
+        logger.info(
+            "[migrate_assets] %d organizaciones migradas de %s a %s.",
+            len(moved_rows), from_user_id, to_user_id,
+        )
+    except Exception as exc:
+        logger.error(f"[migrate_assets] Error migrando activos de {from_user_id} a {to_user_id}: {exc}")
+
+
+def get_or_create_linkedin_profile(provider_id: str, user_info: dict, existing_user_id: Optional[str] = None) -> Optional[dict]:
     """
     Resuelve heurísticamente la vinculación (o creación) del perfil para usuarios OAuth.
 
     :param provider_id: Identificador (no UUID) que proviene de LinkedIn.
     :param user_info: Diccionario devuelto por el identity layer.
+    :param existing_user_id: UUID del usuario de plataforma actual, si ya está autenticado.
     :returns: El registro del perfil asociado al usuario actual, o None.
     """
     sb = get_supabase_admin()
@@ -427,6 +650,37 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
     last_name = user_info.get('family_name') or (name_parts[1] if len(name_parts) > 1 else '')
 
     has_li_column = True
+
+    if existing_user_id:
+        try:
+            # Check if this provider_id is already linked to another profile
+            dup_resp = sb.table("user_profiles").select("id").eq("linkedin_provider_id", provider_id).execute()
+            if dup_resp and dup_resp.data:
+                for row in dup_resp.data:
+                    if row["id"] != existing_user_id:
+                        sb.table("user_profiles").update({"linkedin_provider_id": None}).eq("id", row["id"]).execute()
+                        logger.info(f"Unlinked linkedin_provider_id {provider_id} from profile {row['id']} to link it to {existing_user_id}")
+                        # CRÍTICO: las organizaciones (y sus vínculos de acceso)
+                        # viajan con la cuenta de LinkedIn al nuevo perfil.
+                        _migrate_user_assets(sb, row["id"], existing_user_id)
+            
+            resp = sb.table("user_profiles").select("*").eq("id", existing_user_id).maybe_single().execute()
+            if resp and resp.data:
+                profile = resp.data
+                updates = {}
+                # Update the linkedin_provider_id if needed
+                if not profile.get("linkedin_provider_id") or profile.get("linkedin_provider_id") != provider_id:
+                    updates["linkedin_provider_id"] = provider_id
+                if user_info.get("picture") and profile.get("avatar_url") != user_info["picture"]:
+                    updates["avatar_url"] = user_info["picture"]
+                if updates:
+                    sb.table("user_profiles").update(updates).eq("id", existing_user_id).execute()
+                    profile.update(updates)
+                    logger.info(f"Updated profile {existing_user_id} with linked LinkedIn provider {provider_id}")
+                get_user_profile.clear()
+                return profile
+        except Exception as e:
+            logger.warning(f"Failed to update existing_user_id {existing_user_id}: {e}")
 
     try:
         # Búsqueda por linkedin_provider_id.
@@ -440,7 +694,15 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
             )
             if resp and resp.data:
                 logger.debug(f"Perfil encontrado por linkedin_provider_id={provider_id}")
-                return resp.data
+                profile = resp.data
+                if user_info.get("picture") and profile.get("avatar_url") != user_info["picture"]:
+                    try:
+                        sb.table("user_profiles").update({"avatar_url": user_info["picture"]}).eq("id", profile["id"]).execute()
+                        profile["avatar_url"] = user_info["picture"]
+                        logger.info(f"Updated avatar_url for profile {profile['id']}")
+                    except Exception as ae:
+                        logger.warning(f"Failed to update avatar_url: {ae}")
+                return profile
         except Exception as e:
             logger.warning(
                 f"linkedin_provider_id lookup failed "
@@ -459,21 +721,19 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
             )
             if resp and resp.data:
                 profile = resp.data
-                if has_li_column:
+                updates = {}
+                if has_li_column and not profile.get("linkedin_provider_id"):
+                    updates["linkedin_provider_id"] = provider_id
+                if user_info.get("picture") and profile.get("avatar_url") != user_info["picture"]:
+                    updates["avatar_url"] = user_info["picture"]
+                
+                if updates:
                     try:
-                        sb.table("user_profiles").update(
-                            {"linkedin_provider_id": provider_id}
-                        ).eq("id", profile["id"]).execute()
-                        profile["linkedin_provider_id"] = provider_id
-                        logger.info(
-                            f"Perfil existente {profile['id']} vinculado a "
-                            f"LinkedIn provider {provider_id}"
-                        )
+                        sb.table("user_profiles").update(updates).eq("id", profile["id"]).execute()
+                        profile.update(updates)
+                        logger.info(f"Updated profile {profile['id']} with {updates}")
                     except Exception as e:
-                        logger.warning(
-                            f"No se pudo vincular linkedin_provider_id "
-                            f"al perfil existente: {e}"
-                        )
+                        logger.warning(f"Failed to update profile: {e}")
                 get_user_profile.clear()
                 return profile
 
@@ -565,13 +825,15 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
             )
             if existing_resp and existing_resp.data:
                 profile = existing_resp.data
-
-                # Vincular provider_id si falta
+                updates = {}
                 if has_li_column and not profile.get("linkedin_provider_id"):
+                    updates["linkedin_provider_id"] = provider_id
+                if user_info.get("picture") and profile.get("avatar_url") != user_info["picture"]:
+                    updates["avatar_url"] = user_info["picture"]
+                if updates:
                     try:
-                        sb.table("user_profiles").update(
-                            {"linkedin_provider_id": provider_id}
-                        ).eq("id", profile["id"]).execute()
+                        sb.table("user_profiles").update(updates).eq("id", profile["id"]).execute()
+                        profile.update(updates)
                     except Exception:
                         pass
                 logger.info(
@@ -599,6 +861,7 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
             "first_name": first_name,
             "last_name": last_name,
             "has_completed_onboarding": False,
+            "avatar_url": user_info.get("picture")
         }
         if has_li_column:
             new_profile["linkedin_provider_id"] = provider_id
@@ -614,128 +877,6 @@ def get_or_create_linkedin_profile(provider_id: str, user_info: dict) -> Optiona
         return None
 
 
-def get_current_user() -> Optional[object]:
-    """
-    Devuelve el usuario actual de Supabase o None si no hay sesión activa.
-
-    Implementa una estrategia fast-path consultando el session_state cacheado 
-    por ensure_auth(), recurriendo al SDK de Auth únicamente en escenarios de 
-    login explícito de tipo email/password.
-
-    :returns: Objeto usuario del payload JWT o None.
-    """
-    # Fast path: recuperación desde state cacheado (inyectado por ensure_auth).
-    cached = st.session_state.get('user')
-    if cached is not None:
-        return cached
-
-    # Slow path: invocación del SDK REST hacia el backend de Supabase Auth.
-    try:
-        auth_sb = _get_auth_client()
-        session = auth_sb.auth.get_session()
-        if session and session.user:
-            # Guardar para futuros accesos en este script-run
-            st.session_state['user'] = session.user
-            return session.user
-        return None
-    except Exception as e:
-        st.error(f"Error al obtener el usuario actual: {e}")
-        return None
-
-
-def signup(email: str, password: str, first_name: str, last_name: str) -> bool:
-    """
-    Registra un nuevo usuario nativo en Supabase.
-
-    Nota: Esta acción no inyecta el token en memoria (no realiza login automático).
-    
-    :param email: Correo de contacto.
-    :param password: Clave segura de acceso.
-    :param first_name: Nombre del titular.
-    :param last_name: Apellidos del titular.
-    :returns: Booleano indicando el éxito del sign_up inicial.
-    """
-    try:
-        auth_sb = _get_auth_client()
-        options = {
-            "data": {
-                "first_name": first_name,
-                "last_name": last_name
-            },
-            "email_redirect_to": BASE_URL
-        }
-
-        res = auth_sb.auth.sign_up({
-            "email": email,
-            "password": password,
-            "options": options
-        })
-
-        if getattr(res, "user", None):
-            user = res.user
-            try:
-                logger.info(f"Perfil inicial creado para {user.id}.")
-            except PostgrestAPIError as e:
-                logger.error(f"Error al crear perfil inicial (PostgrestAPIError): {e.message}")
-                st.error(f"Error al crear tu perfil: {e.message}")
-            except Exception as e:
-                logger.error(f"Error inesperado al crear perfil inicial: {e}")
-                st.error(f"Ocurrio un error inesperado: {e}")
-
-            get_user_profile.clear()
-
-            st.success("Registro exitoso! Revisa tu email para verificar tu cuenta.")
-            return False
-        return False
-    except AuthApiError as e:
-        logger.error(f"Error en el registro (AuthApiError): {e.message}")
-        st.error(f"Error en el registro: {e.message}")
-        return False
-    except Exception as e:
-        logger.error(f"Error inesperado en signup: {e}")
-        st.error(f"Ocurrio un error inesperado: {e}")
-        return False
-
-
-# Auxiliares de Estado Interno (Session Management).
-def mark_aipost_logged_in(user: object) -> None:
-    """
-    Registra la autorización activa en memoria e inyecta el modelo de usuario.
-
-    :param user: Estructura base del usuario identificado.
-    """
-    st.session_state['aipost_logged_in'] = True
-    st.session_state['user'] = user
-
-
-def mark_aipost_logged_out() -> None:
-    """
-    Destruye los tokens y referencias cacheadas del usuario para purgar la sesión de UI.
-    """
-    st.session_state['aipost_logged_in'] = False
-    st.session_state['user'] = None
-    # Limpiamos tambien el token unificado
-    st.session_state['auth_token_for_url'] = None
-
-
-def is_aipost_logged_in() -> bool:
-    """
-    Determina si el flag lógico de autenticación está presente en el contexto UI.
-
-    :returns: True si el usuario ha sido marcado como autenticado.
-    """
-    return bool(st.session_state.get('aipost_logged_in'))
-
-
-def get_aipost_user() -> Optional[object]:
-    """
-    Expone la estructura de usuario validada (MockUser o real) en el ciclo de runtime actual.
-
-    :returns: Instancia del usuario en memoria o None.
-    """
-    return st.session_state.get('user')
-
-
 def get_user_from_supabase_token(jwt: str):
     """
     Valida un JWT contra Supabase Auth usando el admin client.
@@ -749,120 +890,3 @@ def get_user_from_supabase_token(jwt: str):
         return user_response.user
     except Exception:
         return None
-
-
-def login(email: str, password: str) -> bool:
-    """
-    Inicia sesión por email/password, obteniendo e inyectando un token unificado en el state local.
-
-    :param email: Correo registrado.
-    :param password: Clave validada.
-    :returns: True si la sesión fue confirmada y guardada, False en error de credenciales.
-    """
-    try:
-        auth_sb = _get_auth_client()
-        response = auth_sb.auth.sign_in_with_password({"email": email, "password": password})
-        if response.user and response.session:
-            mark_aipost_logged_in(response.user)
-            logger.info("Login de Supabase exitoso.")
-            get_user_profile.clear()
-            return True
-        else:
-            st.warning("Credenciales incorrectas. Por favor, intentalo de nuevo.")
-            return False
-    except AuthApiError as e:
-        st.error(f"Error de autenticacion: {e.message}")
-        return False
-    except Exception as e:
-        logger.error(f"Error inesperado durante el login: {e}")
-        st.error("Ocurrio un error de conexion. Intentalo de nuevo mas tarde.")
-        return False
-
-
-def logout() -> None:
-    """
-    Fuerza el logout integral: Purga cookies del iframe, la sesión Supabase y memoria.
-    """
-    # Extracción en runtime del CookieController para prevenir importaciones circulares prematuras.
-    try:
-        from src.linkedin_auth import get_cookie_controller
-        cookies = get_cookie_controller()
-        cookies.remove("linkedin_access_token")
-    except Exception as e:
-        logger.warning(f"No se pudo eliminar la cookie de LinkedIn: {e}")
-
-    # 2. Cerrar sesion en Supabase
-    try:
-        auth_sb = _get_auth_client()
-        auth_sb.auth.sign_out()
-    except Exception as e:
-        logger.error(f"Error en Supabase sign_out: {e}")
-
-    get_user_profile.clear()
-
-    # 3. Limpiar todo el estado de sesion para asegurar un inicio limpio
-    keys_to_clear = list(st.session_state.keys())
-    for key in keys_to_clear:
-        del st.session_state[key]
-
-    # 4. Limpiar query params
-    st.query_params.clear()
-
-    # 5. Llamar al logout del backend (best-effort)
-    try:
-        requests.get(f"{FASTAPI_URL}/auth/logout", timeout=5)
-        logger.info("Llamada al endpoint de logout del backend realizada.")
-    except Exception as e:
-        logger.warning(f"No se pudo llamar al logout del backend: {e}")
-
-    mark_aipost_logged_out()
-
-
-def revalidate_aipost_session() -> None:
-    """
-    Comprueba si hay una sesion de Supabase activa y actualiza st.session_state.
-    Se usa como una sincronizacion secundaria, la fuente de verdad principal es el token.
-
-    PERF: Si la sesion ya fue verificada por ensure_auth() (session_verified=True),
-    marcamos directamente como revalidado sin llamar a Supabase SDK.
-    Esto elimina una llamada de red redundante a get_session() en cada pagina.
-    """
-    if st.session_state.get('aipost_session_revalidated'):
-        return
-
-    # Fast path: ensure_auth ya verifico la sesion completa
-    if st.session_state.get('session_verified') and is_aipost_logged_in():
-        st.session_state['aipost_session_revalidated'] = True
-        return
-
-    try:
-        auth_sb = _get_auth_client()
-        session = auth_sb.auth.get_session()
-        if session and session.user and not is_aipost_logged_in():
-            # Si hay sesion de Supabase pero no de AIPost, la marcamos.
-            # Esto puede pasar en la primera carga si hay una cookie de Supabase valida.
-            mark_aipost_logged_in(session.user)
-            logger.debug("Revalidacion de Supabase encontro una sesion activa.")
-        elif not session or not session.user:
-            _has_li_tok = bool(
-                st.session_state.get('auth_token_for_url')
-                or st.session_state.get('li_token_data')
-            )
-            if not _has_li_tok:
-                mark_aipost_logged_out()
-            else:
-                logger.debug(
-                    "revalidate: no Supabase SDK session but LinkedIn "
-                    "token present -- deferring to token restore"
-                )
-
-    except Exception as e:
-        logger.warning(f"Error al verificar la sesion de Supabase: {e}")
-        _has_li_tok = bool(
-            st.session_state.get('auth_token_for_url')
-            or st.session_state.get('li_token_data')
-        )
-        if not _has_li_tok:
-            mark_aipost_logged_out()
-
-    st.session_state['aipost_session_revalidated'] = True

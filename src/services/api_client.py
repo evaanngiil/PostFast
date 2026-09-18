@@ -1,209 +1,19 @@
-import requests
-import streamlit as st
-from src.core.logger import logger
+"""
+Capa de acceso a datos (DTO) sobre Supabase para el backend.
+
+NOTA: Los antiguos helpers HTTP (`get_api_client`, `start_content_generation`,
+`schedule_or_publish_post`, `resume_content_generation`, etc.) que la UI de
+Streamlit usaba para hablar con FastAPI se han retirado junto con el frontend
+Streamlit. El backend (tareas Celery, routers y nodos del grafo) accede a la
+base de datos directamente a través de las funciones DTO de este módulo.
+"""
 from typing import Dict, Any, Optional, List
-import datetime
 from datetime import datetime as _dt, timezone
 import uuid
+
+from src.core.logger import logger
 from src.services.supabase_client import get_supabase_admin as get_supabase
-from src.services.redis_client import redis_client
-from src.supabase_auth import get_aipost_user
 
-try:
-    from src.core.constants import FASTAPI_URL
-except ImportError:
-    FASTAPI_URL = "http://localhost:8000"
-    print(f"ADVERTENCIA: FASTAPI_URL por defecto: {FASTAPI_URL}")
-
-def _get_current_token() -> Optional[str]:
-    """
-    Obtiene el token de autenticación actual de la plataforma (LinkedIn OAuth).
-
-    Intenta recuperar el token del state interactivo (Streamlit) y hace fallback 
-    al store persistente (Redis) para soportar la ejecución background (ej. Celery).
-
-    :returns: Token JWT en formato string, o None si no se encuentra sesión válida.
-    """
-    # 1. Recuperación en contexto síncrono (UI).
-    try:
-        if st.session_state.get("li_connected"):
-            token = (st.session_state.get("li_token_data") or {}).get("access_token")
-            if token:
-                logger.debug("Token de LinkedIn obtenido desde st.session_state.")
-                return token
-    except (RuntimeError, AttributeError):
-        # Fallback silencioso cuando el runtime de UI no está presente (workers).
-        logger.debug("st.session_state no disponible. Evaluando contexto background.")
-
-    # 2. Recuperación en contexto asíncrono/background (Cache).
-    try:
-        aipost_user = get_aipost_user()
-        if aipost_user and hasattr(aipost_user, 'id'):
-            logger.debug(f"Intentando obtener el token de LinkedIn desde Redis.[user_id={aipost_user.id}]")
-            token_from_redis = redis_client.get_linkedin_token_from_redis(user_id=aipost_user.id)
-            if token_from_redis:
-                logger.debug("Token de LinkedIn obtenido desde Redis.")
-                # Inyección reactiva en el framework de estado si está disponible.
-                try:
-                    st.session_state['li_token_data'] = {'access_token': token_from_redis}
-                    st.session_state['li_connected'] = True
-                except (RuntimeError, AttributeError):
-                    pass
-                return token_from_redis
-    except Exception as e:
-        logger.debug(f"Error obteniendo token desde Redis: {e}")
-
-    logger.warning("No se pudo encontrar un token de LinkedIn válido.")
-    return None
-
-# Middleware de inyección de autorización Bearer.
-class BearerAuth(requests.auth.AuthBase):
-    def __init__(self, token):
-        self.token = token
-    def __call__(self, r):
-        r.headers["Authorization"] = f"Bearer {self.token}"
-        return r
-
-def get_api_client() -> requests.Session:
-    """
-    Construye una sesión HTTP (requests) pre-inyectada con el token de autorización actual.
-
-    :returns: Instancia configurada de requests.Session.
-    """
-    session = requests.Session()
-    access_token = _get_current_token()
-    if access_token:
-        session.auth = BearerAuth(access_token)
-    else:
-        # El rechazo del request se delega al backend mediante 401 Unauthorized.
-        logger.warning("Cliente de API inicializado sin token de acceso. Las llamadas a endpoints protegidos fallaran.")
-    return session
-
-
-def get_user_profile() -> Optional[Dict[str, Any]]:
-    """
-    Realiza un handshake contra el endpoint principal de identity para recuperar los claims del usuario.
-
-    :returns: Diccionario con la metadata del perfil consolidado, o None en fallo.
-    """
-    client = get_api_client()
-    # Prevención de pre-flight calls sin capa de seguridad.
-    if not client.auth:
-        logger.error("Intento de llamar a /auth/me sin un token de autenticación.")
-        return None
-
-    endpoint = f"{FASTAPI_URL}/auth/me"
-    try:
-        response = client.get(endpoint)
-        response.raise_for_status()  # Lanza un error para respuestas 4xx/5xx
-        return response.json()
-    except requests.exceptions.HTTPError as http_err:
-        logger.error(f"Error HTTP al llamar a /auth/me: {http_err}")
-        if http_err.response.status_code == 401:
-            st.warning("Tu sesión ha expirado. Por favor, vuelve a iniciar sesión.")
-    except Exception as e:
-        logger.error(f"Error inesperado al llamar a /auth/me: {e}")
-    return None
-
-
-# Interfaces con Backend API.
-def get_task_status(task_id: str) -> Dict[str, Any]:
-    """
-    Punto de entrada obsoleto. Preservado temporalmente para fallback de rutinas asíncronas no migradas.
-
-    :param task_id: Identificador de la tarea Celery.
-    :returns: Payload estructurado de respuesta "NOT_FOUND".
-    """
-    logger.warning("get_task_status llamado pero Analytics ha sido eliminado.")
-    return {"status": "NOT_FOUND", "result": None, "task_id": task_id}
-
-
-def start_content_generation(
-    tone: str, query: str, niche: str, account_name: str, selected_account:dict ,link_url: Optional[str] = None
-) -> str:
-    """
-    Dispatch de una orden de generación hacia el grafo de agentes del backend.
-
-    :param tone: Tonalidad esperada de la publicación.
-    :param query: Contexto o prompt primario sobre el que crear contenido.
-    :param niche: Segmento o sector objetivo.
-    :param account_name: Nombre visible del author/tenant.
-    :param selected_account: Diccionario con metadata de la cuenta target.
-    :param link_url: Opcional. URL de referencia para ingesta en el grafo.
-    :returns: ID de la tarea de Celery encolada.
-    """
-
-    client = get_api_client()
-    endpoint = f"{FASTAPI_URL}/content/generate_post"
-    payload = {
-        "query": query, "tone": tone, "niche": niche,
-        "account_name": account_name, "selected_account": selected_account, "link_url": link_url
-    }
-
-    response = client.post(endpoint, json={k: v for k, v in payload.items() if v is not None}, timeout=180)
-    response.raise_for_status()
-    return response.json()["task_id"]
-
-def get_generation_status(task_id: str) -> Dict[str, Any]:
-    """
-    Consulta reactiva del estado del LangGraph broker mediante polling al backend.
-
-    :param task_id: Identificador UUID de la tarea.
-    :returns: Diccionario con estado, output serializado y/o prompts pendientes.
-    """
-    client = get_api_client()
-    endpoint = f"{FASTAPI_URL}/content/generate_post/status/{task_id}"
-    response = client.get(endpoint)
-    response.raise_for_status()
-    return response.json()
-
-
-def schedule_or_publish_post(
-    platform: str, account_id: str, content: str, 
-    scheduled_time: Optional[datetime] = None, link_url: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Efectúa el proxy request para encolar o despachar una publicación al instante hacia las redes.
-
-    :param platform: Red social destino (ej: 'linkedin').
-    :param account_id: Identificador de la cuenta que publicará (URN de LinkedIn).
-    :param content: Cuerpo de texto del post.
-    :param scheduled_time: Opcional. Timestamp en UTC de programación diferida.
-    :param link_url: Opcional. Metadato de URL a enlazar en el snippet de preview.
-    :returns: Payload confirmando inicio/schedule de tarea con su task_id.
-    """
-    client = get_api_client()
-    schedule_endpoint = f"{FASTAPI_URL}/content/schedule_post"
-    payload = {
-        "platform": platform, "account_id": account_id, "content": content,
-        "scheduled_time_str": scheduled_time.isoformat(timespec='seconds') if scheduled_time else None,
-        "link_url": link_url
-    }
-    
-    response = client.post(
-        schedule_endpoint,
-        json={k: v for k, v in payload.items() if v is not None}
-    )
-    response.raise_for_status()
-    return response.json()
-
-
-def resume_content_generation(task_id: str, feedback: str) -> Dict[str, Any]:
-    """
-    Retoma el flujo suspendido de un grafo inyectando un feedback loop validado por el usuario.
-
-    :param task_id: UUID original de la request inicial.
-    :param feedback: Prompt rectificativo textual.
-    :returns: Nuevo bloque de estado/task_id asignado al proceso reactivado.
-    """
-    client = get_api_client()
-    endpoint = f"{FASTAPI_URL}/content/generate_post/resume"
-
-    payload = {"task_id": task_id, "feedback": feedback}
-    response = client.post(endpoint, json=payload)
-    response.raise_for_status()
-
-    return response.json()
 
 # Controladores DTO para Gestión de Publicaciones.
 def create_post(
@@ -216,7 +26,9 @@ def create_post(
     title: Optional[str] = None,
     feedback: Optional[str] = None,
     image_url: Optional[str] = None,
-    link_url: Optional[str] = None
+    link_url: Optional[str] = None,
+    post_id: Optional[str] = None,
+    score: Optional[int] = None
 ) -> str:
     """
     Instancia una publicación en la BD relacional y devuelve su primary key UUID.
@@ -231,17 +43,26 @@ def create_post(
     :param feedback: Log transaccional del review-node.
     :param image_url: Opcional URL del asset de imagen.
     :param link_url: Opcional URl embebida.
+    :param post_id: Opcional UUID pre-generado para alinear con el thread_id de LangGraph.
+    :param score: Opcional puntuación de calidad (0 a 100).
     :returns: ID insertado (UUID string).
     """
     supabase = get_supabase()
-    post_id = str(uuid.uuid4())
+    id_to_use = post_id if post_id else str(uuid.uuid4())
+
+    if score is None and content:
+        try:
+            from src.services.rag_service import evaluate_post_quality
+            score = evaluate_post_quality(content)
+        except Exception as e:
+            logger.warning(f"Error autoevaluando score en create_post: {e}")
 
     # Serialización explícita a ISO format para evitar errores de JSON en Supabase
     s_time = scheduled_time.isoformat() if scheduled_time else None
     p_time = published_time.isoformat() if published_time else None
 
     payload = {
-        "id": post_id,
+        "id": id_to_use,
         "content": content,
         "status": status,
         "platform": platform,
@@ -252,11 +73,12 @@ def create_post(
         "feedback": feedback,
         "image_url": image_url,
         "link_url": link_url,
+        "score": score,
     }
 
     try:
         supabase.table("posts").insert({k: v for k, v in payload.items() if v is not None}).execute()
-        return post_id
+        return id_to_use
     except Exception as e:
         logger.error(f"Error persistiendo post en DB: {e}")
         raise # Re-lanzar para que el router sepa que falló
@@ -276,18 +98,45 @@ def get_all_posts(status: Optional[str] = None, account_id: Optional[str] = None
     if account_id:
         query = query.eq("account_id", account_id)
     result = query.execute()
-    return result.data or []
+    posts = result.data or []
+
+    # Evaluar score para posts que no lo tengan
+    for post in posts:
+        if post.get("score") is None and post.get("content"):
+            try:
+                from src.services.rag_service import evaluate_post_quality
+                post_score = evaluate_post_quality(post["content"])
+                post["score"] = post_score
+                update_post(post["id"], {"score": post_score})
+            except Exception as e:
+                logger.warning(f"Error autoevaluando post histórico {post['id']}: {e}")
+
+    return posts
 
 def get_post_by_id(post_id: str) -> Optional[Dict[str, Any]]:
     """
     Búsqueda individual mediante Primary Key UUID.
 
+    NOTA: no usar .single() aquí — PostgREST lanza PGRST116 ("Cannot coerce the
+    result to a single JSON object") cuando hay 0 filas, en lugar de devolver
+    None. Esto ocurre legítimamente cuando el frontend envía un post_id
+    pre-generado (alineado al thread de LangGraph) que aún no se ha insertado.
+
     :param post_id: Cadena identificadora.
     :returns: Documento consolidado del post, o None si no hace hit.
     """
     supabase = get_supabase()
-    result = supabase.table("posts").select("*").eq("id", post_id).single().execute()
-    return result.data if result.data else None
+    result = supabase.table("posts").select("*").eq("id", post_id).limit(1).execute()
+    post = result.data[0] if result.data else None
+    if post and post.get("score") is None and post.get("content"):
+        try:
+            from src.services.rag_service import evaluate_post_quality
+            post_score = evaluate_post_quality(post["content"])
+            post["score"] = post_score
+            update_post(post_id, {"score": post_score})
+        except Exception as e:
+            logger.warning(f"Error autoevaluando post individual {post_id}: {e}")
+    return post
 
 def update_post(post_id: str, updates: Dict[str, Any]) -> bool:
     """
@@ -299,6 +148,15 @@ def update_post(post_id: str, updates: Dict[str, Any]) -> bool:
     """
     if not updates:
         return False
+
+    # Si cambia el contenido y no se provee score, reevaluar calidad
+    if "content" in updates and updates["content"] and "score" not in updates:
+        try:
+            from src.services.rag_service import evaluate_post_quality
+            updates["score"] = evaluate_post_quality(updates["content"])
+        except Exception as e:
+            logger.warning(f"Error autoevaluando score en update_post para {post_id}: {e}")
+
     supabase = get_supabase()
     clean_updates = {k: v for k, v in updates.items() if v is not None}
     if not clean_updates:
@@ -594,7 +452,25 @@ def get_engagement_insights(org_urn: str) -> Optional[Dict[str, Any]]:
         t_imp = row.get("total_impressions") or 0
         t_eng = row.get("total_engagements") or 0
         avg_rate = float(row.get("avg_engagement_rate") or 0)
-        pc = len(share_stats)
+        
+        # Query actual analyzed/stored post count from company_profiles
+        actual_post_count = 0
+        try:
+            profile_res = (
+                supabase.table("company_profiles")
+                .select("posts_analyzed_count, posts_stored_count")
+                .eq("org_urn", org_urn)
+                .limit(1)
+                .execute()
+            )
+            if profile_res.data:
+                profile_row = profile_res.data[0]
+                actual_post_count = profile_row.get("posts_analyzed_count") or profile_row.get("posts_stored_count") or 0
+        except Exception as p_err:
+            logger.debug(f"Could not resolve actual post count for {org_urn}: {p_err}")
+            
+        pc = actual_post_count if actual_post_count > 0 else len(share_stats)
+        
         return {
             "total_impressions": t_imp,
             "total_engagements": t_eng,
@@ -607,6 +483,13 @@ def get_engagement_insights(org_urn: str) -> Optional[Dict[str, Any]]:
             "post_count": pc,
             "top_performing_posts": row.get("top_performing_posts") or [],
             "extracted_at": row.get("extracted_at"),
+            "aggregate_metrics": {
+                "avg_engagement_rate": avg_rate,
+                "total_impressions": t_imp,
+                "total_engagements": t_eng,
+                "post_count": pc,
+            },
+            "engagement_analysis": row.get("engagement_analysis")
         }
     except Exception as e:
         logger.error("Error obteniendo metricas de engagement para %s: %s", org_urn, e)
@@ -666,3 +549,100 @@ def update_change_check_timestamp(
         )
     except Exception as e:
         logger.error(f"Error updating change_check_at for {org_urn}: {e}")
+
+
+# --- CRUD Skills ---
+
+def create_skill(org_urn: str, name: str, description: Optional[str], markdown_content: str) -> Optional[str]:
+    try:
+        supabase = get_supabase()
+        payload = {
+            "org_urn": org_urn,
+            "name": name,
+            "description": description,
+            "markdown_content": markdown_content
+        }
+        result = supabase.table("skills").insert(payload).execute()
+        if result.data:
+            return result.data[0]["id"]
+        return None
+    except Exception as e:
+        logger.error(f"Error creating skill for {org_urn}: {e}")
+        return None
+
+def get_all_skills(org_urn: str) -> List[Dict[str, Any]]:
+    try:
+        supabase = get_supabase()
+        result = supabase.table("skills").select("*").eq("org_urn", org_urn).order("created_at", desc=False).execute()
+        skills = result.data or []
+        
+        # Check if Base Skill exists
+        base_name = "Guía de Estilo y Generación (Base)"
+        base_skill = next((s for s in skills if s.get("name") == base_name), None)
+        
+        if not base_skill and org_urn and not org_urn.startswith("urn:li:person:"):
+            # Create default Base Skill
+            default_markdown = """# Guía de Estilo y Generación (Base)
+
+Esta es la directriz base utilizada por el agente de Inteligencia Artificial para la redacción de publicaciones en LinkedIn. Puedes editar esta guía para personalizar el estilo general de tu cuenta.
+
+## 1. Voz de la Marca y Tono
+- **Profesional pero Cercano:** Hablar de tecnología, negocios e innovación de forma de forma directa y cercana.
+- **Empático y Orientado a Soluciones:** Enfocarse en resolver desafíos reales de la audiencia.
+- **Evitar Argot Excesivo:** Explicar términos complejos cuando sea necesario.
+
+## 2. Pautas de Redacción
+- **Gancho Inicial (Hook):** La primera línea debe captar la atención de inmediato con una pregunta intrigante, un dato impactante o una afirmación provocativa.
+- **Estructura Legible:** Utilizar párrafos cortos (de 2 a 3 líneas máximo) y saltos de línea frecuentes para facilitar la lectura móvil.
+- **Bullet Points:** Usar viñetas o emojis selectivos para estructurar listas de datos o beneficios clave.
+
+## 3. Palabras Clave y Temas de Interés
+- **Palabras Clave Preferidas:** Innovación, Eficiencia, Sostenibilidad, Transformación Digital, Liderazgo.
+- **Temas Clave:** Casos de éxito, lecciones aprendidas, tendencias del mercado, consejos prácticos.
+
+## 4. Estructura del Cierre
+- **Llamada a la Acción (CTA):** Finalizar con una pregunta abierta para fomentar comentarios o invitar a leer más en el enlace oficial.
+- **Hashtags:** Agregar de 3 a 5 hashtags específicos del sector al final del texto."""
+            
+            payload = {
+                "org_urn": org_urn,
+                "name": base_name,
+                "description": "Directrices base obligatorias de tono de voz, estructura y formato del post.",
+                "markdown_content": default_markdown
+            }
+            res_insert = supabase.table("skills").insert(payload).execute()
+            if res_insert.data:
+                skills.insert(0, res_insert.data[0])
+                
+        return skills
+    except Exception as e:
+        logger.error(f"Error getting skills for {org_urn}: {e}")
+        return []
+
+def get_skill_by_id(skill_id: str) -> Optional[Dict[str, Any]]:
+    try:
+        supabase = get_supabase()
+        result = supabase.table("skills").select("*").eq("id", skill_id).single().execute()
+        return result.data if result.data else None
+    except Exception as e:
+        logger.error(f"Error getting skill {skill_id}: {e}")
+        return None
+
+def update_skill(skill_id: str, updates: Dict[str, Any]) -> bool:
+    try:
+        supabase = get_supabase()
+        updates["updated_at"] = _dt.now(timezone.utc).isoformat()
+        result = supabase.table("skills").update(updates).eq("id", skill_id).execute()
+        return bool(result.data)
+    except Exception as e:
+        logger.error(f"Error updating skill {skill_id}: {e}")
+        return False
+
+def delete_skill(skill_id: str) -> bool:
+    try:
+        supabase = get_supabase()
+        result = supabase.table("skills").delete().eq("id", skill_id).execute()
+        return bool(result.data)
+    except Exception as e:
+        logger.error(f"Error deleting skill {skill_id}: {e}")
+        return False

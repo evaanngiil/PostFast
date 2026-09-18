@@ -7,6 +7,23 @@ load_dotenv()
 GENAI_API_KEY = os.getenv("GENAI_API_KEY")
 LANGCHAIN_API_KEY = os.getenv("LANGCHAIN_API_KEY")
 
+# Observabilidad (LangSmith): si hay API key, se activa el tracing automático
+# de LangChain/LangGraph (tokens, latencias y coste por nodo del pipeline).
+if LANGCHAIN_API_KEY:
+    os.environ.setdefault("LANGCHAIN_TRACING_V2", "true")
+    os.environ.setdefault("LANGCHAIN_API_KEY", LANGCHAIN_API_KEY)
+    os.environ.setdefault("LANGCHAIN_PROJECT", os.getenv("LANGCHAIN_PROJECT", "AIPost"))
+
+# Modo demostración del TFG: habilita los tokens 'mock_*' de evaluación.
+# NUNCA debe estar activo en un despliegue real (bypass de autenticación).
+DEMO_MODE = os.getenv("AIPOST_DEMO_MODE", "false").lower() in ("1", "true", "yes")
+
+# Directorio de subida de PDFs (configurable; por defecto relativo al repo).
+UPLOAD_DIR = os.getenv(
+    "AIPOST_UPLOAD_DIR",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploaded_pdfs"),
+)
+
 LI_CLIENT_ID = os.getenv("LI_CLIENT_ID")
 LI_CLIENT_SECRET = os.getenv("LI_CLIENT_SECRET")
 LI_SCOPES = [
@@ -56,6 +73,14 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 SUPABASE_CONN_STRING = os.getenv("SUPABASE_CONN_STRING")
 
+# Clave PÚBLICA (anon/publishable) de Supabase, la única que puede exponerse
+# al navegador (p. ej. para Realtime). SUPABASE_KEY es la clave privilegiada
+# de backend y no debe salir del servidor jamás.
+SUPABASE_PUBLISHABLE_KEY = (
+    os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    or os.getenv("SUPABASE_ANON_KEY")
+)
+
 # Configuración de caché / message broker (Redis).
 REDIS_HOST = os.getenv("REDIS_HOST")
 REDIS_PORT = os.getenv("REDIS_PORT")
@@ -90,17 +115,26 @@ def get_fast_llm(name: str = "gemini-3.1-flash-lite-preview"):
     from src.agents.utils.llm_factory import LLMFactory
     return LLMFactory.get_llm(llm_name=name)
 
+# Jerarquía de modelos configurable por entorno. Por defecto todos apuntan al
+# modelo con mayor cuota del free-tier; en evaluación/producción se pueden
+# diferenciar sin tocar código (p. ej. SMART_LLM=gemini-2.5-flash).
+_DEFAULT_LLM = os.getenv("AIPOST_DEFAULT_LLM", "gemini-3.1-flash-lite-preview")
+
 # Modelo designado para tareas creativas o de razonamiento complejo (ej. redacción de posts).
-SMART_LLM = "gemini-flash-latest"
+SMART_LLM = os.getenv("SMART_LLM", _DEFAULT_LLM)
 
 # Modelo designado para tareas deterministas o de alta frecuencia (ej. parsers, formato JSON).
-MEDIUM_LLM = "gemini-3.1-flash-lite-preview"
+MEDIUM_LLM = os.getenv("MEDIUM_LLM", _DEFAULT_LLM)
 
 # Modelo designado para procesamiento batch de análisis de posts.
-ANALYSIS_LLM = "gemini-3.1-flash-lite-preview"
+ANALYSIS_LLM = os.getenv("ANALYSIS_LLM", _DEFAULT_LLM)
 
 # Modelo designado para tareas de complejidad media (ej. web scraping, brainstroming).
-FAST_LLM = "gemini-3.1-flash-lite-preview"
+FAST_LLM = os.getenv("FAST_LLM", _DEFAULT_LLM)
+
+# Modelo del juez de la evaluación comparativa (distinto del generador para
+# mitigar el sesgo de auto-preferencia en LLM-as-judge).
+JUDGE_LLM = os.getenv("JUDGE_LLM", "gemini-2.5-flash")
 
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")

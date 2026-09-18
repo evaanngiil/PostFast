@@ -1,6 +1,5 @@
 from typing import Optional
 from supabase import create_client, Client
-import streamlit as st
 from src.core.constants import SUPABASE_URL, SUPABASE_KEY
 
 _client: Optional[Client] = None

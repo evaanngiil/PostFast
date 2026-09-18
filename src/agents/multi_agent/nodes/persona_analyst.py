@@ -5,7 +5,6 @@ from typing import List, Dict, Any
 
 from src.agents.multi_agent.state import AgentState
 from src.core.constants import MEDIUM_LLM, GENAI_API_KEY
-from src.agents.multi_agent.tools.profiler_tools import scrape_website
 
 class BrandPersona(BaseModel):
     core_topics: List[str] = Field(description="Lista de 3-5 temas o conceptos centrales que la marca discute con frecuencia.")
@@ -121,5 +120,20 @@ def run_persona_analyst_node(state: AgentState) -> Dict[str, Any]:
     
     print("✅ Perfil de Marca generado.")
     print(persona_profile)
+
+    # Persist brand_persona_json inside company_profiles table in Supabase
+    try:
+        from src.services.api_client import get_supabase
+        supabase = get_supabase()
+        org_urn_val = company_profile.get("urn")
+        if org_urn_val:
+            res = supabase.table("company_profiles").select("company_profile").eq("org_urn", org_urn_val).limit(1).execute()
+            if res.data and res.data[0].get("company_profile"):
+                current_profile = res.data[0]["company_profile"]
+                current_profile["brand_persona_json"] = persona_profile.dict()
+                supabase.table("company_profiles").update({"company_profile": current_profile}).eq("org_urn", org_urn_val).execute()
+                print(f"brand_persona_json saved back to Supabase company_profiles for {org_urn_val}")
+    except Exception as save_err:
+        print(f"Warning: could not persist brand_persona_json to database: {save_err}")
 
     return {"brand_persona_json": persona_profile.dict()}

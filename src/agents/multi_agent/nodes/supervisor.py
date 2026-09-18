@@ -2,58 +2,119 @@
 Módulo de enrutamiento determinista para el grafo de LangGraph.
 
 Implementa la lógica de bifurcación condicional basada en validaciones de estado (if/elif).
-Opera sin inferencia LLM para garantizar latencia cero y ruteo estricto 
-en la topología del pipeline (company_profiler -> engagement_extractor -> ... -> human_review).
+Garantiza el flujo secuencial estricto a través de las 14 fases de PostFast v2,
+incluyendo bucles de corrección automática si el Fact Checker o el Safety Guard fallan.
+
+Soporta además:
+- Ruteo al nodo `content_editor` para ediciones dirigidas por feedback humano (HITL)
+  y para el modo edición rápida, separando "editar" de "generar".
+- Configuración de ablación (`ablation_disabled`) para los estudios comparativos del
+  TFG: permite desactivar capacidades individuales sin modificar la topología.
 """
 
+from typing import Union, List
 from src.agents.multi_agent.state import AgentState
 from src.core.logger import logger
 
 
-def supervisor_router_logic(state: AgentState) -> str:
+def _is_disabled(state: AgentState, capability: str) -> bool:
+    """Indica si una capacidad está desactivada por configuración de ablación."""
+    return capability in (state.get("ablation_disabled") or [])
+
+
+def supervisor_router_logic(state: AgentState) -> Union[str, List[str]]:
     """
     Evalúa la completitud secuencial del payload de AgentState para dictaminar el siguiente nodo activo.
 
     :param state: Diccionario tipado (AgentState) en su iteración actual.
-    :returns: Identificador en string del siguiente worker a disparar.
+    :returns: Identificador en string o lista de strings del siguiente(s) worker(s) a disparar.
     """
-    logger.info("--- SUPERVISOR DECIDIENDO (deterministic) ---")
+    logger.info("--- 🔀 SUPERVISOR EVALUANDO ESTADO (14 Fases) ---")
 
-    # 1. El perfil de la empresa debe construirse primero
-    if not state.get("company_profile"):
-        logger.info("-> company_profiler (perfil de empresa pendiente)")
-        return "company_profiler"
+    # ===== FLUJO DE MODO EDICIÓN RÁPIDA =====
+    if state.get("edit_mode"):
+        logger.info("-> [MODO EDICIÓN RÁPIDA DETECTADO EN SUPERVISOR]")
+        if not state.get("draft_post"):
+            logger.info("-> content_editor (edición de post pendiente en edición rápida)")
+            return "content_editor"
+        logger.info("-> human_review (edición rápida completada, saltando validaciones)")
+        return "human_review"
 
-    # 2. Extracción de métricas de engagement
-    if not state.get("engagement_insights"):
-        logger.info("-> engagement_extractor (metricas de engagement pendientes)")
-        return "engagement_extractor"
+    # ===== EDICIÓN DIRIGIDA POR FEEDBACK HUMANO (HITL) =====
+    # Tras la revisión humana con feedback, human_review limpia draft_post y
+    # conserva last_draft_content: el editor aplica los cambios de forma quirúrgica.
+    if (
+        state.get("user_feedback")
+        and state.get("last_draft_content")
+        and not state.get("draft_post")
+    ):
+        logger.info("-> content_editor (aplicando feedback del usuario sobre el borrador)")
+        return "content_editor"
 
-    # 3. Análisis predictivo de los patrones de engagement
-    if not state.get("engagement_analysis"):
-        logger.info("-> engagement_analyzer (analisis de engagement pendiente)")
+    # ===== FASE 2: ANÁLISIS DE AUDIENCIA Y ENGAGEMENT =====
+    if not state.get("engagement_analysis") and not _is_disabled(state, "engagement_analyzer"):
+        logger.info("-> engagement_analyzer (análisis de engagement pendiente)")
         return "engagement_analyzer"
 
-    # 4. El perfil de marca necesita perfil de empresa + datos de engagement
-    if not state.get("brand_persona_json"):
+    if not state.get("brand_persona_json") and not _is_disabled(state, "persona_analyst"):
         logger.info("-> persona_analyst (perfil de marca pendiente)")
         return "persona_analyst"
 
-    # 5. Expandir la idea del usuario en un brief completo
+    # ===== FASE 3: DETECCIÓN DE DUPLICADOS Y TENDENCIAS =====
+    duplicate_pending = (
+        state.get("existing_posts_on_topic") is None
+        and not _is_disabled(state, "duplicate_detector")
+    )
+    trends_pending = (
+        not state.get("industry_trends")
+        and not _is_disabled(state, "trend_researcher")
+    )
+
+    if duplicate_pending and trends_pending:
+        logger.info("-> duplicate_detector & trend_researcher (ejecutando en paralelo)")
+        return ["duplicate_detector", "trend_researcher"]
+    elif duplicate_pending:
+        logger.info("-> duplicate_detector (búsqueda de duplicados pendiente)")
+        return "duplicate_detector"
+    elif trends_pending:
+        logger.info("-> trend_researcher (investigación de tendencias pendiente)")
+        return "trend_researcher"
+
+    # ===== FASE 4: CONCEPTUALIZACIÓN Y CREACIÓN =====
     if not state.get("fleshed_out_idea"):
         logger.info("-> idea_expander (idea expandida pendiente)")
         return "idea_expander"
 
-    # 6. Escribir el borrador del post
     if not state.get("draft_post"):
-        logger.info("-> content_writer (borrador pendiente)")
+        logger.info("-> content_writer (borrador de post pendiente)")
         return "content_writer"
 
-    # 7. Todo listo -- ir a revision humana
-    logger.info("-> human_review (borrador listo)")
+    # ===== FASE 5: VALIDACIÓN Y COMPLIANCE =====
+    if not state.get("fact_check_report") and not _is_disabled(state, "fact_checker"):
+        logger.info("-> fact_checker (verificación factual de claims pendiente)")
+        return "fact_checker"
+
+    # Bucle de re-ciclo por fallo factual
+    fact_report = state.get("fact_check_report") or {}
+    if fact_report and not fact_report.get("overall_pass"):
+        logger.info("❌ FACT CHECK FALLIDO -> Redirigiendo a content_writer para correcciones")
+        return "content_writer"
+
+    if not state.get("safety_report") and not _is_disabled(state, "safety_guard"):
+        logger.info("-> safety_guard (auditoría de marca y compliance pendiente)")
+        return "safety_guard"
+
+    # Bucle de re-ciclo por fallo en seguridad o políticas
+    safety_report = state.get("safety_report") or {}
+    if safety_report and not safety_report.get("approved") and safety_report.get("severity") in ("medium", "high", "critical"):
+        logger.info("❌ SAFETY GUARD FALLIDO -> Redirigiendo a content_writer para correcciones")
+        return "content_writer"
+
+    # ===== FASE FINAL: REVISIÓN HUMANA =====
+    logger.info("-> human_review (borrador validado e impecable)")
     return "human_review"
 
 
 def supervisor_router(state: AgentState) -> dict:
-    """Funcion del nodo (sin operacion). La logica de ruteo vive en la arista condicional."""
+    """Función del nodo (sin operación). La lógica de ruteo vive en la arista condicional."""
     return {}
