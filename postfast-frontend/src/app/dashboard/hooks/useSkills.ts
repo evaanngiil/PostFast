@@ -34,12 +34,15 @@ export function useSkills({ authToken, orgUrn, showToast }: UseSkillsDeps) {
         const data = await res.json();
         setSkills(data);
         if (data.length > 0) {
-          const base = data.find((s: any) => s.name === "Guía de Estilo y Generación (Base)");
+          const base = data.find((s: any) => s.name?.includes("Guía de Estilo y Generación") || s.name?.toLowerCase().includes("(base)"));
           const target = base || data[0];
           setActiveWorkspaceSkill(target);
-          setWorkspaceSkillName(target.name);
+          setWorkspaceSkillName((target.name || "").replace(/\s*\((?:Base|BASE)\)/gi, "").trim());
           setWorkspaceSkillDesc(target.description || "");
           setWorkspaceSkillMarkdown(target.markdown_content || "");
+          if (base) {
+            setSelectedSkillIds((prev) => (prev.length === 0 ? [base.id] : prev.includes(base.id) ? prev : [base.id, ...prev]));
+          }
         } else {
           setActiveWorkspaceSkill(null);
           setWorkspaceSkillName("");

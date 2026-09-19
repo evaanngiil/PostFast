@@ -55,66 +55,92 @@ function getSpecialties(profileObj: any): string[] {
   return [];
 }
 
-/** Extrae las listas de Do's y Don'ts del brand book en markdown. */
+/** Limpia texto de asteriscos, guiones de viñeta y prefijos de etiqueta */
+export function sanitizeDirectiveItem(raw: string): string {
+  if (!raw) return "";
+  let text = raw.trim();
+  // Elimina viñetas iniciales como - * • y números tipo 1.
+  text = text.replace(/^[-*•\d.)\s]+/, "");
+  // Elimina prefijos repetitivos como **Do's:**, **Don'ts:**, Do's:, Don'ts:, etc.
+  text = text.replace(/^(?:\*{1,2})?(?:do'?s|dont'?s|don'ts|qué hacer|qué evitar|qué no hacer):\s*(?:\*{1,2})?/i, "");
+  // Elimina cualquier asterisco restante suelto o en pares
+  text = text.replace(/\*{1,2}/g, "");
+  // Elimina espacios extras
+  text = text.replace(/\s+/g, " ").trim();
+  return text;
+}
+
+/** Extrae las listas de Do's y Don'ts del brand book en markdown de forma precisa. */
 function parseDosAndDonts(markdown: string): { dos: string[]; donts: string[] } {
   const dos: string[] = [];
   const donts: string[] = [];
   if (!markdown) return { dos, donts };
+
   const lines = markdown.split("\n");
   let currentSection: "none" | "dos" | "donts" = "none";
+
   for (const line of lines) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     const lower = trimmed.toLowerCase();
-    if (lower.includes("do's") || lower.includes("dos") || lower.includes("qué hacer") || lower.includes("qué hacer (do's)")) {
-      if (!trimmed.startsWith("-") && !trimmed.startsWith("*")) {
+
+    // Detección de encabezados específicos de sección (## Do's, ## Don'ts, etc.)
+    // Evitamos coincidir con títulos globales como "# Guía de Estilo y Do's & Don'ts"
+    const isGlobalTitle = lower.includes("do's") && (lower.includes("don'ts") || lower.includes("donts"));
+    
+    if (!isGlobalTitle) {
+      if (
+        /^#+\s*(?:do'?s|qué hacer)/i.test(trimmed) ||
+        /^(?:do'?s|qué hacer)\s*:?$/i.test(trimmed)
+      ) {
         currentSection = "dos";
         continue;
-      }
-    } else if (lower.includes("don'ts") || lower.includes("donts") || lower.includes("qué no hacer") || lower.includes("qué no hacer (don'ts)")) {
-      if (!trimmed.startsWith("-") && !trimmed.startsWith("*")) {
+      } else if (
+        /^#+\s*(?:don'?ts|qué no hacer|qué evitar)/i.test(trimmed) ||
+        /^(?:don'?ts|qué no hacer|qué evitar)\s*:?$/i.test(trimmed)
+      ) {
         currentSection = "donts";
         continue;
       }
     }
-    if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
-      const content = trimmed
-        .replace(/^[-*]\s*/, "")
-        .replace(/^\*\*Do's:\*\*\s*/i, "")
-        .replace(/^\*\*Don'ts:\*\*\s*/i, "")
-        .replace(/^Do's:\s*/i, "")
-        .replace(/^Don'ts:\s*/i, "")
-        .trim();
-      if (content) {
-        if (currentSection === "dos" || lower.includes("do's:") || lower.includes("dos:")) {
-          dos.push(content);
-        } else if (currentSection === "donts" || lower.includes("don'ts:") || lower.includes("donts:")) {
-          donts.push(content);
-        }
-      }
+
+    // Comprobamos si la línea individual contiene la etiqueta explícita de Do's o Don'ts
+    if (/^[-*•]?\s*(?:\*{1,2})?do'?s\s*:/i.test(trimmed)) {
+      const cleaned = sanitizeDirectiveItem(trimmed);
+      if (cleaned) dos.push(cleaned);
+      continue;
+    }
+    if (/^[-*•]?\s*(?:\*{1,2})?don'?ts\s*:/i.test(trimmed)) {
+      const cleaned = sanitizeDirectiveItem(trimmed);
+      if (cleaned) donts.push(cleaned);
+      continue;
+    }
+
+    // Si estamos dentro de una sección activa identificada por encabezado
+    if (currentSection === "dos" && (trimmed.startsWith("-") || trimmed.startsWith("*") || trimmed.startsWith("•"))) {
+      const cleaned = sanitizeDirectiveItem(trimmed);
+      if (cleaned) dos.push(cleaned);
+    } else if (currentSection === "donts" && (trimmed.startsWith("-") || trimmed.startsWith("*") || trimmed.startsWith("•"))) {
+      const cleaned = sanitizeDirectiveItem(trimmed);
+      if (cleaned) donts.push(cleaned);
     }
   }
+
+  // Fallback si no se encontró nada por encabezado pero hay líneas con formato de lista
   if (dos.length === 0 && donts.length === 0) {
     for (const line of lines) {
       const trimmed = line.trim();
-      if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
-        const content = trimmed.replace(/^[-*]\s*/, "").trim();
-        if (content.toLowerCase().startsWith("do's:") || content.toLowerCase().startsWith("**do's:**")) {
-          dos.push(content.replace(/^(?:\*\*Do's:\*\*|Do's:)\s*/i, ""));
-        } else if (content.toLowerCase().startsWith("don'ts:") || content.toLowerCase().startsWith("**don'ts:**")) {
-          donts.push(content.replace(/^(?:\*\*Don'ts:\*\*|Don'ts:)\s*/i, ""));
-        }
+      const lower = trimmed.toLowerCase();
+      if (lower.includes("do's:") || lower.includes("dos:")) {
+        const cleaned = sanitizeDirectiveItem(trimmed);
+        if (cleaned) dos.push(cleaned);
+      } else if (lower.includes("don'ts:") || lower.includes("donts:")) {
+        const cleaned = sanitizeDirectiveItem(trimmed);
+        if (cleaned) donts.push(cleaned);
       }
     }
   }
-  if (dos.length === 0 && donts.length === 0) {
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if ((trimmed.startsWith("-") || trimmed.startsWith("*")) && !trimmed.includes("**")) {
-        dos.push(trimmed.replace(/^[-*]\s*/, ""));
-      }
-    }
-  }
+
   return { dos, donts };
 }
 
@@ -358,10 +384,10 @@ export function useKnowledgeBase({ authToken, orgUrn, addLog }: UseKnowledgeBase
     const brandBookMarkdown = `# Do's y Don'ts para LinkedIn
 
 ## Do's
-${localDos.map(item => `- ${item}`).join('\n')}
+${localDos.map(item => `- ${sanitizeDirectiveItem(item)}`).join('\n')}
 
 ## Don'ts
-${localDonts.map(item => `- ${item}`).join('\n')}
+${localDonts.map(item => `- ${sanitizeDirectiveItem(item)}`).join('\n')}
 `;
 
     try {

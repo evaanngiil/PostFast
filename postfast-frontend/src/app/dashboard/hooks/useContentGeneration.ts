@@ -14,26 +14,18 @@ interface UseContentGenerationDeps {
   loadHistory: (overrideUrn?: string) => void;
   loadRagPosts: (urn: string) => void;
   setActiveTab: (tab: "dashboard" | "generator" | "company" | "rag" | "history" | "skills") => void;
+  showToast?: (msg: string, type?: ToastMessage["type"]) => void;
 }
 
-/**
- * Núcleo de generación de contenido: formulario del generador, ejecución del
- * pipeline (task + suscripción Realtime), bucle HITL y las acciones de destino
- * del borrador (publicar, guardar, programar). Es el cluster más acoplado del
- * dashboard, por eso vive en un único hook con dependencias inyectadas.
- */
 export function useContentGeneration({
   authToken, selectedCompany, supabaseConfig, selectedSkillIds,
-  addLog, clearLogs, loadHistory, loadRagPosts, setActiveTab,
+  addLog, clearLogs, loadHistory, loadRagPosts, setActiveTab, showToast,
 }: UseContentGenerationDeps) {
-  // Formulario del generador
   const [promptQuery, setPromptQuery] = useState<string>("");
-  const [selectedTone, setSelectedTone] = useState<string>("");
   const [linkUrl, setLinkUrl] = useState<string>("");
   const [editingPost, setEditingPost] = useState<any | null>(null);
   const [editInstruction, setEditInstruction] = useState<string>("");
 
-  // Task / Realtime / HITL
   const [taskId, setTaskId] = useState<string | null>(null);
   const [currentThreadId, setCurrentThreadId] = useState<string | null>(null);
   const [taskStatus, setTaskStatus] = useState<string | null>(null);
@@ -44,6 +36,11 @@ export function useContentGeneration({
   const [factCheck, setFactCheck] = useState<FactCheckReport | null>(null);
   const [safetyReport, setSafetyReport] = useState<SafetyReport | null>(null);
   const [knowledgeGap, setKnowledgeGap] = useState<KnowledgeGap | null>(null);
+
+  const editingPostRef = useRef<any | null>(editingPost);
+  const currentPostIdRef = useRef<string | null>(null);
+  const currentThreadIdRef = useRef<string | null>(null);
+
   const [userFeedback, setUserFeedback] = useState<string>("");
   const [checkpointConfig, setCheckpointConfig] = useState<any>(null);
   const [isSubmittingFeedback, setIsSubmittingFeedback] = useState<boolean>(false);
@@ -52,6 +49,18 @@ export function useContentGeneration({
   const [submittedPrompt, setSubmittedPrompt] = useState<string>("");
   const [showFullPrompt, setShowFullPrompt] = useState(false);
   const [currentPostId, setCurrentPostId] = useState<string | null>(null);
+
+  useEffect(() => {
+    editingPostRef.current = editingPost;
+  }, [editingPost]);
+
+  useEffect(() => {
+    currentPostIdRef.current = currentPostId;
+  }, [currentPostId]);
+
+  useEffect(() => {
+    currentThreadIdRef.current = currentThreadId;
+  }, [currentThreadId]);
 
   // Acciones de destino / scheduling
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
@@ -105,8 +114,8 @@ export function useContentGeneration({
           account_id: post.account_id,
           content: post.content,
           scheduled_time_str: null,
-          post_id: currentPostId || post.id || null,
-          thread_id: currentThreadId || post.thread_id || null
+          post_id: post.id || currentPostIdRef.current || currentPostId || null,
+          thread_id: post.thread_id || currentThreadIdRef.current || currentThreadId || null
         })
       });
 
@@ -119,6 +128,7 @@ export function useContentGeneration({
       const data = await res.json();
       if (data && data.post_id) {
         setCurrentPostId(data.post_id);
+        currentPostIdRef.current = data.post_id;
       }
       loadHistory(selectedCompany?.urn);
       addLog("SISTEMA", "Borrador guardado exitosamente.", "success");
@@ -128,7 +138,6 @@ export function useContentGeneration({
     }
   };
 
-  // Suscripción a Supabase Broadcast en tiempo real (progreso del pipeline).
   useEffect(() => {
     if (!supabaseConfig || !taskId) return;
 
@@ -137,7 +146,7 @@ export function useContentGeneration({
     addLog("WEBSOCKET", `Suscribiéndose al canal de broadcast 'task:${taskId}'...`, "info");
 
     const channel = supabase.channel(`task:${taskId}`)
-      .on("broadcast", { event: "status_changed" }, (payload: any) => {
+      .on("broadcast", { event: "status_changed" }, async (payload: any) => {
         const data = payload.payload;
         console.log("Realtime broadcast recibido:", data);
 
@@ -149,7 +158,6 @@ export function useContentGeneration({
           addLog("CELERY WORKER", data.message, "info");
         }
 
-        // Manejar progresos específicos de nodos en el grafo
         if (data.node) {
           let type: "info" | "success" | "warn" | "error" = "info";
           let prefix = `[Agente: ${data.node}]`;
@@ -157,11 +165,9 @@ export function useContentGeneration({
 
           addLog(prefix, data.message || "Procesando tarea...", type);
           setActiveAgent(data.node);
-          // Registrar el paso en el pipeline dinámico (orden real de ejecución)
           setAgentSteps(prev => prev.includes(data.node) ? prev : [...prev, data.node]);
         }
 
-        // Si entramos en estado interactivo
         if (data.status === "PENDING_USER_INPUT") {
           addLog("SUPERVISOR", "Generación finalizada. Entrando en fase de revisión interactiva (HITL).", "success");
           setCheckpointConfig(data.checkpoint);
@@ -173,7 +179,6 @@ export function useContentGeneration({
           setActiveAgent(null);
         }
 
-        // Si la tarea se completó exitosamente
         if (data.status === "COMPLETED") {
           addLog("SUPERVISOR", "¡Publicación aprobada con éxito!", "success");
           setDraftContent(data.final_post || "");
@@ -187,20 +192,39 @@ export function useContentGeneration({
           setIsGenerating(false);
           setActiveAgent(null);
 
-          // Ejecutar la acción pendiente
-          const action = pendingActionRef.current;
-          if (action === "publish_now") {
-            handlePublishNow({ account_id: selectedCompany?.urn, content: data.final_post });
-          } else if (action === "save_draft") {
-            handleSaveDraft({ account_id: selectedCompany?.urn, content: data.final_post });
-          } else if (action === "schedule") {
-            setSchedulePostData({ account_id: selectedCompany?.urn, content: data.final_post });
-            setIsScheduleModalOpen(true);
+          const isEditing = Boolean(editingPostRef.current);
+          const targetPostId = currentPostIdRef.current || editingPostRef.current?.id;
+
+          if (isEditing) {
+            await handleSaveDraft({
+              id: targetPostId,
+              account_id: selectedCompany?.urn,
+              content: data.final_post,
+            });
+            loadHistory(selectedCompany?.urn);
+            resetGeneratorState();
+            setActiveTab("history");
+            addLog("SISTEMA", "Publicación editada y guardada con éxito en el Histórico.", "success");
+            if (showToast) {
+              showToast("Publicación actualizada y guardada con éxito en el Histórico", "success");
+            }
+          } else {
+            const action = pendingActionRef.current;
+            if (action === "publish_now") {
+              handlePublishNow({ account_id: selectedCompany?.urn, content: data.final_post });
+            } else if (action === "save_draft") {
+              handleSaveDraft({ account_id: selectedCompany?.urn, content: data.final_post });
+            } else if (action === "schedule") {
+              setSchedulePostData({ account_id: selectedCompany?.urn, content: data.final_post });
+              setIsScheduleModalOpen(true);
+            } else if (data.final_post && selectedCompany?.urn) {
+              handleSaveDraft({ account_id: selectedCompany?.urn, content: data.final_post });
+            }
+            loadHistory(selectedCompany?.urn);
           }
 
           pendingActionRef.current = null;
           setPendingAction(null);
-          loadHistory(selectedCompany?.urn);
         }
 
         // Si falló
@@ -222,7 +246,7 @@ export function useContentGeneration({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId, supabaseConfig]);
 
-  const handleGeneratePost = async () => {
+  const handleGeneratePost = async (overrideEditPost?: any, overrideInstructions?: string) => {
     if (!selectedCompany) {
       addLog("GENERATOR", "Error: Selecciona una organización conectada primero.", "error");
       return;
@@ -230,7 +254,6 @@ export function useContentGeneration({
 
     setIsGenerating(true);
 
-    // Generar un ID único que se usará alineado como post_id y thread_id de LangGraph
     const generateUUID = () => {
       if (typeof crypto !== "undefined" && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -241,11 +264,44 @@ export function useContentGeneration({
         return v.toString(16);
       });
     };
-    const generatedId = currentPostId || generateUUID();
-    const activeThreadId = currentThreadId || generatedId;
+
+    const isSyntheticEvent = Boolean(
+      overrideEditPost &&
+      (typeof overrideEditPost.preventDefault === "function" ||
+        overrideEditPost.nativeEvent !== undefined ||
+        overrideEditPost._reactName !== undefined)
+    );
+
+    const isActualPostObject = (p: any): boolean =>
+      Boolean(p && typeof p === "object" && !p.nativeEvent && typeof p.preventDefault !== "function" && ("content" in p || "id" in p));
+
+    const validOverridePost = isSyntheticEvent ? undefined : overrideEditPost;
+    const targetEditPost = validOverridePost !== undefined
+      ? (isActualPostObject(validOverridePost) ? validOverridePost : null)
+      : (isActualPostObject(editingPost) ? editingPost : null);
+
+    const isEditModeActive = Boolean(targetEditPost);
+    const targetEditInstruction = overrideInstructions !== undefined
+      ? overrideInstructions
+      : (isEditModeActive ? editInstruction : "");
+
+    if (validOverridePost !== undefined) {
+      const postToSet = isActualPostObject(validOverridePost) ? validOverridePost : null;
+      setEditingPost(postToSet);
+      editingPostRef.current = postToSet;
+    }
+    if (overrideInstructions !== undefined) {
+      setEditInstruction(overrideInstructions);
+    }
+
+    const newGeneratedId = generateUUID();
+    const generatedId = isEditModeActive ? (targetEditPost.id || newGeneratedId) : newGeneratedId;
+    const activeThreadId = isEditModeActive ? (targetEditPost.id || newGeneratedId) : newGeneratedId;
 
     setCurrentPostId(generatedId);
+    currentPostIdRef.current = generatedId;
     setCurrentThreadId(activeThreadId);
+    currentThreadIdRef.current = activeThreadId;
 
     setTaskId(null);
     setTaskStatus("STARTING");
@@ -256,14 +312,13 @@ export function useContentGeneration({
     clearLogs();
     setAgentSteps([]);
     setShowFullPrompt(false);
-    // Fijar la petición original que se mostrará anclada durante todo el flujo
-    setSubmittedPrompt(editingPost ? `✏️ Edición de post — Instrucciones: ${editInstruction}` : promptQuery);
+    setSubmittedPrompt(isEditModeActive ? `✏️ Edición de post — Instrucciones: ${targetEditInstruction}` : promptQuery);
 
     addLog("GENERATOR", `Despachando tarea asíncrona a Celery para la empresa '${selectedCompany.name}'...`, "info");
 
     try {
-      const finalQuery = editingPost
-        ? `Quiero editar y mejorar este post:\n\n${editingPost.content}\n\nMis instrucciones de mejora: ${editInstruction}`
+      const finalQuery = isEditModeActive
+        ? `Quiero editar y mejorar este post:\n\n${targetEditPost.content}\n\nMis instrucciones de mejora: ${targetEditInstruction}`
         : promptQuery;
 
       const payload = {
@@ -279,10 +334,9 @@ export function useContentGeneration({
         skill_id: selectedSkillIds.length > 0 ? selectedSkillIds[0] : null,
         selected_skills: selectedSkillIds,
         thread_id: activeThreadId,
-        edit_mode: !!editingPost,
-        // Protocolo estructurado de edición (el string embebido en query queda como legacy)
-        original_post: editingPost ? editingPost.content : null,
-        edit_instructions: editingPost ? editInstruction : null
+        edit_mode: isEditModeActive,
+        original_post: isEditModeActive ? targetEditPost.content : null,
+        edit_instructions: isEditModeActive ? ((targetEditInstruction || "").trim() || "Optimiza y pule la redacción de esta publicación para LinkedIn manteniendo su mensaje y estructura central.") : null
       };
 
       const res = await fetch("http://localhost:8000/content/generate_post", {
@@ -389,30 +443,49 @@ export function useContentGeneration({
     }
   };
 
-  // Reset completo del generador: vuelve a la vista inicial (formulario limpio)
   const resetGeneratorState = () => {
+    if (taskId && isGenerating) {
+      try {
+        fetch(`http://localhost:8000/content/generate_post/stop/${taskId}`, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${authToken}`
+          }
+        }).catch(() => {});
+      } catch {}
+    }
+    setPromptQuery("");
+    setLinkUrl("");
+    setEditingPost(null);
+    setEditInstruction("");
     setDraftContent("");
+    setDraftHashtags([]);
+    setDraftCta("");
     setTaskId(null);
     setTaskStatus(null);
+    setIsGenerating(false);
+    setActiveAgent(null);
     setCheckpointConfig(null);
     setFactCheck(null);
     setSafetyReport(null);
     setKnowledgeGap(null);
+    setUserFeedback("");
+    setIsSubmittingFeedback(false);
     clearLogs();
     setAgentSteps([]);
     setSubmittedPrompt("");
+    setShowFullPrompt(false);
     setCurrentThreadId(null);
     setCurrentPostId(null);
-    setEditingPost(null);
-    setEditInstruction("");
+    currentPostIdRef.current = null;
+    currentThreadIdRef.current = null;
+    editingPostRef.current = null;
+    pendingActionRef.current = null;
   };
 
   const handleEditPost = (post: any) => {
-    // El thread_id es exactamente el id del post
     const finalThreadId = post.id;
-
-    // Limpiar estados de generación anterior para poder ver el formulario de prompt
-    setDraftContent("");
+    setDraftContent(post.content || "");
     setTaskId(null);
     setTaskStatus(null);
     setCheckpointConfig(null);
@@ -422,13 +495,13 @@ export function useContentGeneration({
     clearLogs();
     setAgentSteps([]);
     setSubmittedPrompt("");
-
-    // Configurar el contexto del post a editar
     setEditingPost(post);
     setEditInstruction("");
     setCurrentThreadId(finalThreadId);
     setCurrentPostId(post.id || null);
-    setActiveTab("generator");
+    editingPostRef.current = post;
+    currentPostIdRef.current = post.id || null;
+    currentThreadIdRef.current = finalThreadId;
   };
 
   const handleDeletePost = async (postId: string) => {
@@ -489,7 +562,7 @@ export function useContentGeneration({
 
   return {
     // Formulario
-    promptQuery, setPromptQuery, selectedTone, setSelectedTone,
+    promptQuery, setPromptQuery,
     linkUrl, setLinkUrl,
     editingPost, setEditingPost, editInstruction, setEditInstruction,
     // Task / Realtime / HITL
