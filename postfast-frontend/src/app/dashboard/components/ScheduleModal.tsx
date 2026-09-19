@@ -15,7 +15,7 @@ export default function ScheduleModal({ scheduleDate, onChange, onConfirm, onClo
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-brand-teal" />
-            Programar Publicación
+            Programar publicación
           </h3>
           <button
             onClick={onClose}
@@ -29,7 +29,7 @@ export default function ScheduleModal({ scheduleDate, onChange, onConfirm, onClo
             Elige la fecha y hora en la que quieres publicar el contenido en LinkedIn.
           </p>
           <div className="flex flex-col gap-2">
-            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Fecha y Hora</label>
+            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Fecha y hora</label>
             <input
               type="datetime-local"
               value={scheduleDate}

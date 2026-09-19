@@ -39,7 +39,7 @@ export default function PublishStatusModal({ status, onClose }: PublishStatusMod
               <CheckCircle className="w-10 h-10 stroke-[2.5]" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-800 text-base">¡Publicación Exitosa!</h3>
+              <h3 className="font-bold text-slate-800 text-base">¡Publicación exitosa!</h3>
               <p className="text-xs text-slate-500 mt-1 max-w-[260px]">Tu contenido se ha publicado correctamente en LinkedIn. Ya puedes verlo en tu feed.</p>
             </div>
             <button
