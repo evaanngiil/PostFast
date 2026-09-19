@@ -546,6 +546,51 @@ def content_generation_task(self, payload_dict=None):
 
     config = {"configurable": {"thread_id": thread_id}}
 
+    if not edit_mode:
+        initial_state.setdefault("draft_post", None)
+        initial_state.setdefault("last_draft_content", None)
+        initial_state.setdefault("fact_check_report", None)
+        initial_state.setdefault("safety_report", None)
+        initial_state.setdefault("fleshed_out_idea", None)
+        initial_state.setdefault("user_feedback", None)
+        initial_state.setdefault("correction_loops", 0)
+        initial_state.setdefault("knowledge_gap", None)
+        try:
+            existing_checkpoint = aipost_graph.get_state(config)
+            has_stale_state = (
+                existing_checkpoint is not None
+                and hasattr(existing_checkpoint, "values")
+                and isinstance(existing_checkpoint.values, dict)
+                and bool(existing_checkpoint.values.get("draft_post"))
+            )
+            if has_stale_state:
+                logger.info(
+                    "[content_generation_task] Checkpoint previo con draft_post detectado para thread_id=%s. Purgando estado obsoleto.",
+                    thread_id,
+                )
+                aipost_graph.update_state(config, {
+                    "draft_post": None,
+                    "last_draft_content": None,
+                    "fact_check_report": None,
+                    "safety_report": None,
+                    "fleshed_out_idea": None,
+                    "user_feedback": None,
+                    "correction_loops": 0,
+                    "knowledge_gap": None,
+                    "existing_posts_on_topic": None,
+                    "industry_trends": None,
+                    "engagement_analysis": None,
+                    "brand_persona_json": None,
+                    "edit_mode": False,
+                    "original_post": None,
+                    "edit_instructions": None,
+                }, as_node="supervisor")
+        except Exception as cp_err:
+            logger.warning(
+                "[content_generation_task] No se pudo purgar el checkpoint previo para thread_id=%s: %s",
+                thread_id, cp_err,
+            )
+
     try:
         # Invoca el worker de LangGraph midiendo el consumo real de tokens
         # de todas las llamadas LLM del pipeline (observabilidad de coste).
