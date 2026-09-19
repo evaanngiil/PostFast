@@ -1,0 +1,543 @@
+{
+  "description": "Dataset Ground Truth de publicaciones reales de LinkedIn de BBVA (Banco Bilbao Vizcaya Argentaria) para evaluación empírica cualitativa y cuantitativa del TFG.",
+  "org_urn": "urn:li:organization:136115687",
+  "total_cases": 22,
+  "casuisticas_summary": {
+    "C1_baja_complejidad_bajo_contexto": 3,
+    "C2_baja_complejidad_alto_contexto": 9,
+    "C3_alta_complejidad_bajo_contexto": 2,
+    "C4_alta_complejidad_alto_contexto": 8
+  },
+  "cases": [
+    {
+      "id": "bbva_01",
+      "post_index": 1,
+      "title": "Premios Fronteras del Conocimiento y rigor científico",
+      "casuistica": "C3",
+      "complexity": "alta",
+      "context_level": "bajo",
+      "category": "thought_leadership",
+      "kb_dependent": false,
+      "prompt": "Escribe una publicación institucional para LinkedIn que celebre el rigor científico, la evidencia y la cooperación frente a la simplificación y el prejuicio, con motivo de los Premios Fronteras del Conocimiento de la Fundación BBVA.",
+      "ground_truth_post": "“Celebramos la curiosidad frente al conformismo. \nEl rigor frente a la simplificación. \nLa evidencia frente al prejuicio. \nLa cooperación frente a la fragmentación. \nY la creatividad como fuerza capaz de abrir nuevas posibilidades para el futuro.\"\n\nEstas palabras de Carlos Torres Vila, presidente de BBVA y de la Fundación BBVA, resonaron en Bilbao durante la XVIII edición de los Premios Fronteras del Conocimiento. Y en un mundo de incertidumbre constante, suenan más necesarias que nunca.\n\nPorque hay quienes, en lugar de detenerse ante los grandes retos, los convierten en preguntas. Y nada tan valioso como la curiosidad humana para transformar esas preguntas en descubrimientos que cambian vidas.\n\nEste año, los premios de Fundación BBVA han reconocido a 10 personas y 2 instituciones que están a la vanguardia de ese esfuerzo: revolucionando el tratamiento del cáncer, redefiniendo los materiales del futuro, protegiendo nuestra seguridad digital o creando música que trasciende fronteras.\n\nA lo largo de su historia, 34 galardonados Fronteras han recibido después el Premio Nobel, y no es una casualidad. Es la consecuencia de apostar, edición tras edición, por quienes se atreven a mirar y a llegar más lejos.\n\n\n#PremiosFronteras #FundaciónBBVA #LifeAtBBVA",
+      "official_hashtags": [
+        "#PremiosFronteras",
+        "#FundaciónBBVA",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Premios Fronteras del Conocimiento",
+        "Fundación BBVA",
+        "curiosidad frente al conformismo",
+        "evidencia frente al prejuicio"
+      ],
+      "compliance_notes": "Código de Conducta: difusión cultural y científica sin fines comerciales agresivos.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_02",
+      "post_index": 2,
+      "title": "Yellow Day: bienestar y personas en BBVA",
+      "casuistica": "C1",
+      "complexity": "baja",
+      "context_level": "bajo",
+      "category": "engagement",
+      "kb_dependent": false,
+      "prompt": "Escribe un post distendido para LinkedIn con motivo del Yellow Day (el día más feliz del año), reflexionando sobre el optimismo y la actitud del equipo.",
+      "ground_truth_post": "Hoy es el día más feliz del año (o eso dicen).\n\nY no sabemos si será el sol del hemisferio norte o el fresco del hemisferio sur.\n\nPero como la felicidad se contagia, ayer bajamos a preguntar a nuestros compis qué es lo que les hace feliz en el trabajo. Una charla que sustituye a un hilo de mails 🤝, sentir que tu trabajo ayuda a mejorar la vida de los clientes 💙, o algo tan sencillo como el (segundo) café de la mañana ☕\n\n¿Nos ayudas a seguir esta cadena? Cuéntanos en comentarios qué es lo que te saca la sonrisa en el trabajo 👇\n\n\n#LifeAtBBVA #YellowDay",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#YellowDay"
+      ],
+      "expected_key_facts": [
+        "Yellow Day",
+        "día más feliz del año",
+        "equipo y actitud"
+      ],
+      "compliance_notes": "Tono humano, cercano, sin menciones financieras.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_03",
+      "post_index": 3,
+      "title": "Acción interna deportiva: El pase más largo del mundo",
+      "casuistica": "C1",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "cultura",
+      "kb_dependent": true,
+      "prompt": "Escribe un post corporativo para LinkedIn sobre una iniciativa interna donde un balón viaja de oficina en oficina por 25 países uniendo a los empleados bajo el lema Campeones en todos los campos.",
+      "ground_truth_post": "¿Podemos considerarlo el pase más largo del mundo? ☝️\n\nEste balón lleva días viajando de oficina en oficina por 25 países, pasando por las manos de más de 127.000 jugadoras y jugadores de BBVA.\n\nY mientras la mitad del mundo sueña con la victoria, nuestro marcador está así…\n\n⚽Hat-trick en talento: Mejor banco para trabajar en diversas geografías, (Merco Talento), mejores empleadores de Europa (Financial Times) y 2ª empresa en España (LinkedIn Top Companies).\n\n⚽ Gol en negocio: Banco más innovador del mundo y líderes en Trade Finance en Argentina, Colombia, Perú y Uruguay (Global Finance Magazine).\n\n⚽ Gol en sostenibilidad: Mejor banco del mundo en bonos verdes y primer bono de biodiversidad de Turquía (Global Finance y Environmental Finance Awards).\n\nSin prórroga. Sin penaltis. Sin VAR.\n\nAquí no hay rivalidad que valga. Gane quien gane en julio, en BBVA ya somos campeones en todos los campos ⚽💙\n\n#LifeAtBBVA\n#CampeonesEnTodosLosCampos",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#CampeonesEnTodosLosCampos"
+      ],
+      "expected_key_facts": [
+        "25 países",
+        "pase más largo del mundo",
+        "un solo equipo"
+      ],
+      "compliance_notes": "Código de Conducta 4.20: reforzar el orgullo de pertenencia y trabajo en equipo.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_04",
+      "post_index": 4,
+      "title": "Mujeres en ingeniería e IA con criterio",
+      "casuistica": "C3",
+      "complexity": "alta",
+      "context_level": "bajo",
+      "category": "educativo",
+      "kb_dependent": false,
+      "prompt": "Redacta un post para el Día de la Mujer Ingeniera destacando cómo la próxima generación de ingenieras usa la IA con criterio, ética y curiosidad a través de iniciativas como Technovation Girls.",
+      "ground_truth_post": "La próxima generación de ingenieras no habla de la IA con miedo. \nHabla de ella con criterio.\n\nLa usan para estudiar, resolver dudas y buscar información. Imaginan robots que ayuden en casa, ciudades más conectadas y tecnología integrada en cada profesión: una IA que no las reemplazará, sino que las acompaña desde hoy mismo.\n\nPero también tienen claro que la IA no es infalible: \"a veces nos vacila un poco\", dicen entre risas. Por eso la usan, sí, pero también la cuestionan y se forman una opinión propia.\n\nEso es lo que nos contaron las niñas y jóvenes de entre 8 y 18 años que participaron en Technovation Girls Madrid. Escucharlas nos recuerda que el futuro de la tecnología depende de aprovechar todo su potencial con la guía inmejorable que es el criterio humano.\n\nHoy, 23 de junio, es el Día de la Mujer Ingeniera, y ellas nos recuerdan por qué sigue siendo importante abrir más espacio para el talento femenino en STEM.\n\nLas ingenieras del futuro ya están aquí 💙\n\n#DíaDeLaMujerIngeniera\n#TechnovationGirls\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#DíaDeLaMujerIngeniera",
+        "#TechnovationGirls",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Technovation Girls",
+        "Día de la Mujer Ingeniera",
+        "uso crítico de la IA",
+        "talento femenino en STEM"
+      ],
+      "compliance_notes": "Alineado con los objetivos de diversidad e igualdad de oportunidades de BBVA.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_05",
+      "post_index": 5,
+      "title": "La empatía como habilidad activa en la banca",
+      "casuistica": "C1",
+      "complexity": "baja",
+      "context_level": "bajo",
+      "category": "educativo",
+      "kb_dependent": false,
+      "prompt": "Escribe una reflexión para LinkedIn sobre cómo la empatía no es solo una intención sino una habilidad que requiere trabajo diario para acompañar a los clientes y entender sus necesidades reales.",
+      "ground_truth_post": "Todos hablamos de empatía,\npero ser empáticos requiere trabajo.\n\nLa recompensa es estar cerca de quienes más nos importan y acompañar a nuestros clientes en sus proyectos de manera genuina. Y ahí, la empatía en BBVA es tan esencial como estratégica.\n\nPor eso, en Campus BBVA nuestros equipos no solo profundizan en tecnología, liderazgo o finanzas. También entrenan la empatía como esa habilidad que marca la diferencia en cada interacción, con ponentes de nivel como el presentador de televisión y formador Julian Reyes.\n\nHoy, compartimos contigo tres tips de esa experiencia #CampusBBVA para que estar presente, prestar atención y escuchar de forma activa sea un poco más fácil.\n\nSi el mundo va rápido y la tecnología nos ayuda a surfear esa velocidad, la empatía nos permite que el viaje y el destino sean la verdadera experiencia 💙😉\n\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#CampusBBVA",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "empatía activa",
+        "acompañamiento al cliente",
+        "Campus BBVA"
+      ],
+      "compliance_notes": "Principio de poner al cliente en primer lugar (Código de Conducta).",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_06",
+      "post_index": 6,
+      "title": "Inclusión laboral y formación con Colegio Areteia",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "rrhh",
+      "kb_dependent": true,
+      "prompt": "Escribe un post de agradecimiento y orgullo sobre la experiencia de acoger a estudiantes en prácticas del Colegio Areteia en nuestro equipo, destacando el aprendizaje mutuo.",
+      "ground_truth_post": "Vinieron a aprender.\nNosotros aprendimos más 💙🤝\n\nGonzalo y Carlota llegaron al equipo desde el Colegio Areteia con ganas, curiosidad y esos nervios del primer día.\n\nGonzalo es muy de informática, y ha aprendido que gestionar los nervios es tan importante como el código. Y tiene un sueño muy claro: trabajar en empresas que cuiden a las personas.\n\nCarlota, con un perfil comercial y mucha energía, ya maneja el Activity Report como una pro. Y tiene el plan trazado: terminar su FP y estudiar ADE + Marketing.\n\nDos historias con un mismo aprendizaje: la inclusión no es un valor que se añade a un discurso. Es lo que pasa cuando escuchas de verdad, colaboras y dejas que cada persona aporte lo que solo ella puede aportar.\n\nGracias por la energía y todo lo que nos habéis enseñado. 🚀\n\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Colegio Areteia",
+        "aprendizaje mutuo",
+        "entornos inclusivos"
+      ],
+      "compliance_notes": "GDPR: no publicar datos sensibles de menores o estudiantes; tono de respeto mutuo.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_07",
+      "post_index": 7,
+      "title": "FrauDfense: Alianza interbancaria contra el fraude financiero",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "producto",
+      "kb_dependent": true,
+      "prompt": "Redacta un post informativo y riguroso anunciando FrauDfense Check, la iniciativa colaborativa de BBVA junto a Santander y CaixaBank para compartir inteligencia y prevenir el fraude en transferencias Bizum, tarjetas y altas.",
+      "ground_truth_post": "No importa cual sea tu banco,\nel fraude lo vencemos juntos.\n \nPorque el fraude financiero no entiende de marcas ni de colores corporativos, hemos creado FrauDfense junto a Santander y CaixaBank.\n\nAhora llega FrauDfense Check, un servicio que nace de una idea sencilla, pero con un gran impacto: compartir información entre bancos para detectar el fraude antes de que llegue a las personas.\n\nDurante el último año lo hemos probado en situaciones del día a día:\n\n🧑‍💼 El alta de nuevos clientes \n📋 La contratación de productos \n💸 Transferencias y pagos con Bizum \n💳 Operaciones con tarjetas\n \nEl resultado: millones de euros en fraude prevenidos. La conclusión: la inteligencia compartida no nos hace más débiles, tiene el potencial para reforzar nuestra seguridad y la de cada cliente.\n\nAhora abrimos este modelo al resto del sector, porque cuantos más bancos se sumen, más difícil lo tiene el fraude.\n\nLee la noticia completa➡️https://bbva.info/43XIO4H \n\n#LifeAtBBVA  #FraudeFinanciero #Banca",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#FraudeFinanciero",
+        "#Banca"
+      ],
+      "expected_key_facts": [
+        "FrauDfense",
+        "FrauDfense Check",
+        "Santander",
+        "CaixaBank",
+        "Bizum",
+        "prevención de fraude financiero"
+      ],
+      "compliance_notes": "Política de Comunicación Publicitaria: citar competidores solo en el marco de la alianza oficial; datos exactos.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_08",
+      "post_index": 8,
+      "title": "Programa Polaris para desarrollo de mánagers en Campus BBVA",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "rrhh",
+      "kb_dependent": true,
+      "prompt": "Escribe un post sobre el programa de liderazgo Polaris de Campus BBVA, recogiendo el testimonio de mánagers que terminan la formación con ganas de repetir por el valor humano y profesional aportado.",
+      "ground_truth_post": "\"¡Quiero volver!\"\n\nNo siempre se escucha lo mismo al terminar una formación.\n\nPolaris es el programa estrella de desarrollo para mánagers de BBVA. Pero, en lugar de definirlo con decenas de términos corporativos, les hemos pedido que sean ellos mismos quienes nos cuenten qué ha significado esta experiencia y en qué ha cambiado su manera de ver y encarnar el liderazgo.\n\nQuizá, cuando lo termines tú, tengas tu propia palabra.\n\n👉 https://bbva.info/3QNKefe \n\n#LifeAtBBVA #CampusBBVA #Polaris",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#CampusBBVA",
+        "#Polaris"
+      ],
+      "expected_key_facts": [
+        "Polaris",
+        "Campus BBVA",
+        "desarrollo de mánagers",
+        "liderazgo"
+      ],
+      "compliance_notes": "Employer branding fiel a la oferta formativa real de BBVA.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_09",
+      "post_index": 9,
+      "title": "Inclusión LGTBIQ+ y red de empleados Be Yourself",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "cultura",
+      "kb_dependent": true,
+      "prompt": "Publica una reflexión sobre si apostar por la diversidad es compromiso o valentía corporativa, presentando la labor de la red de empleados Be Yourself de BBVA para garantizar un entorno de trabajo seguro y auténtico.",
+      "ground_truth_post": "¿Es trabajar por la inclusión un acto de compromiso\no de valentía corporativa?\n\nNuestro grupo de empleados y empleadas LGTBIQ+, Be Yourself, ha reunido a tres responsables de Diversidad y a un grupo de participantes dispuestos a hacerse ésta y otras preguntas en una sesión dinamizada por David Alvarez.\n\nEn este vídeo, María Pilar Rojas, responsable de Cultura, Diversidad y Experiencia de empleado en repsol; Miguel A. Castro, director global de Inclusión y Accesibilidad en SAP; y Cristina Gabriel, responsable global de Diversidad, Equidad e Inclusión en BBVA, comparten algunas de estas reflexiones y mandan un mensaje a quien, aún hoy, siente que tiene que esconderse en el trabajo.\n\nSé quien eres. Elige un lugar donde puedas serlo. Y reivindícalo con orgullo.\n\n#LifeAtBBVA  #BeYourselfBBVA  #Orgullo #Pride",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#BeYourselfBBVA",
+        "#Orgullo",
+        "#Pride"
+      ],
+      "expected_key_facts": [
+        "Be Yourself",
+        "espacios seguros",
+        "autenticidad en el trabajo",
+        "diversidad e inclusión"
+      ],
+      "compliance_notes": "Código de Conducta: respeto a la identidad y no discriminación.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_10",
+      "post_index": 10,
+      "title": "Día del Orgullo de la Neurodiversidad en el trabajo",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "rrhh",
+      "kb_dependent": true,
+      "prompt": "Escribe un post educativo y de sensibilización con motivo del Día del Orgullo de la Neurodiversidad, explicando que el 20% de la población es neurodivergente y cómo BBVA adapta sus procesos de selección para atraer talento con diferentes formas de procesar la información.",
+      "ground_truth_post": "El 20% de la población mundial es neurodivergente.\n\nEs decir, personas cuyo cerebro procesa la información, aprende y percibe el mundo de una forma diferente a lo que solemos considerar “estándar”.\nProbablemente conozcas a alguien cercano. Quizás una persona de tu equipo. O puede que lo seas tú mismo.\n\nLas personas neurodiversas tienen que adaptarse a entornos que no están pensados para ellas. Por ejemplo, imagina que llevas años preparándote para una oportunidad profesional y que cuentas con los conocimientos necesarios, pero el formato de la entrevista no juega a tu favor. No porque no puedas hacer el trabajo, sino porque el proceso no está pensado para incluirte.\n\nEn BBVA sabemos que los equipos que piensan diferente resuelven mejor los problemas. Por eso, llevamos más de 12 años trabajando junto a partners como Specialisterne España para seguir mejorando cómo buscamos, evaluamos y acompañamos al talento.\n\nNo se trata de hacer excepciones, sino para construir procesos más justos para todas las personas.\n\nEste trabajo ha permitido que profesionales neurodivergentes formen parte hoy de equipos como Finance, AI Transformation o CIB.\n\nEn el Día del Orgullo de la Neurodiversidad, queremos que sean ellas quienes cuenten cómo ha sido ese camino. En sus propias palabras 👇\n\n\n#LifeAtBBVA #NeurodiversityPride",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#NeurodiversityPride"
+      ],
+      "expected_key_facts": [
+        "20% población neurodivergente",
+        "Neurodiversity Pride",
+        "adaptación de selección",
+        "entornos accesibles"
+      ],
+      "compliance_notes": "Tratamiento respetuoso y riguroso de la diversidad cognitiva.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_11",
+      "post_index": 11,
+      "title": "Comunicado de apoyo y solidaridad ante el sismo (BBVA Provincial)",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "compliance",
+      "kb_dependent": true,
+      "prompt": "Redacta un comunicado institucional de emergencia y solidaridad de BBVA Provincial tras el sismo en el país, informando de la operatividad de los servicios y del compromiso con clientes y comunidades afectadas.",
+      "ground_truth_post": "Desde BBVA Provincial queremos trasladar todo nuestro apoyo y solidaridad a las personas afectadas por el sismo registrado en el territorio nacional este 24 de junio de 2026.\n\nEn momentos como este, lo más importante es estar cerca de nuestros colaboradores, familias y clientes. Nuestros canales digitales y oficinas comerciales a nivel nacional se mantienen operativos y disponibles para realizar consultas y operaciones.\n\nHoy, más que nunca, reafirmamos nuestro compromiso con todos los venezolanos.\n\n#BBVAProvincial",
+      "official_hashtags": [
+        "#BBVAProvincial"
+      ],
+      "expected_key_facts": [
+        "BBVA Provincial",
+        "solidaridad y apoyo",
+        "operatividad de canales",
+        "atención prioritaria"
+      ],
+      "compliance_notes": "Comunicación en situación de crisis: máxima sobriedad, sin mensajes comerciales, información fidedigna.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_12",
+      "post_index": 12,
+      "title": "Reconocimiento como Top Líder en inclusión por REDI",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "thought_leadership",
+      "kb_dependent": true,
+      "prompt": "Escribe un post anunciando el reconocimiento de BBVA por segundo año consecutivo como Top Líder en inclusión por parte de REDI y Actualidad Económica, enfatizando que la inclusión es una convicción permanente.",
+      "ground_truth_post": "Posicionarnos en tiempos de desposicionamiento. \nEso es lo que significa este reconocimiento 🏳️‍🌈\n\nPor segundo año consecutivo, REDI.LGBTI y Actualidad Económica, de Unidad Editorial, reconocen a BBVA como empresa Top Líder LGBTI+.\n\nY este año, el reconocimiento pesa diferente. Porque hablar de diversidad con compromiso y convicción requiere más valentía que nunca.\n\nDesde que en 2019 nació Be Yourself, no hemos parado: una guía trans que evolucionó a procedimiento integral de cambio de género, el primer acuerdo LGBTIQ+ con la representación legal de los trabajadores, referentes que siguen haciendo visible lo que antes era invisible. Peldaño a peldaño. Sin atajos.\n\nPorque construir espacios donde nadie tenga que ocultarse para encajar no es una acción de junio. Es cultura. Y la cultura se construye cada día.\n\nGracias a REDI y al jurado por seguir visibilizando a quienes hacen de la inclusión LGBTI+ una realidad tangible. Y gracias a cada persona de BBVA que lo hace posible. Un reto: no dar ni un paso atrás.\n\n#LifeAtBBVA #BeYourselfBBVA",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#BeYourselfBBVA"
+      ],
+      "expected_key_facts": [
+        "REDI",
+        "Actualidad Económica",
+        "Top Líderes",
+        "segundo año consecutivo"
+      ],
+      "compliance_notes": "Política Publicitaria: datos de premios exactos y verificables sin auto-elogios exagerados.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_13",
+      "post_index": 13,
+      "title": "Formación masiva en IA y Premio Cegos al Talento",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "datos",
+      "kb_dependent": true,
+      "prompt": "Publica un post con cifras sobre la adopción de IA en BBVA, destacando que más de 105.000 empleados se han formado y la consecución del Premio Cegos por aplicar tecnología con visión centrada en las personas.",
+      "ground_truth_post": "Si la IA plantea preguntas,\npreferimos responder con hechos.\n\nMás de 105.000 personas se han formado en tiempo récord. Una red de casi 1.000 Champions y Wizards están acompañando a sus compañeros. Y los propios empleados han creado más de 10.000 asistentes de IA, porque nadie conoce mejor un trabajo que quien lo hace cada día.\n\nEste enfoque ha ganado el 🏆 Premio Cegos de Equipos y Talento en la categoría de IA y Tecnología Aplicada al Talento.\n\nDesde el principio tuvimos una idea clara: el mayor reto de la inteligencia artificial no es tecnológico, es humano. Así que pusimos a las personas al mando.\n\nHoy, el 62% de la plantilla usa IA semanalmente, ahorrando casi 3 horas por persona a la semana, con una satisfacción general de 4,8 sobre 5. \n\nLa IA no sustituye talento, lo hace llegar a nuevas cotas💙\n\n#LifeAtBBVA #PremiosCegos",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#PremiosCegos"
+      ],
+      "expected_key_facts": [
+        "105.000 personas formadas",
+        "Premio Cegos",
+        "Champions de IA",
+        "IA centrada en las personas"
+      ],
+      "compliance_notes": "Factualidad estricta: verificación de la cifra de 105.000 y del galardón otorgado.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_14",
+      "post_index": 14,
+      "title": "Respuesta humanitaria y canal de ayuda tras el terremoto en Venezuela",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "compliance",
+      "kb_dependent": true,
+      "prompt": "Redacta un post sobre la ayuda humanitaria desplegada por BBVA para asistir a los afectados por los terremotos en Venezuela, facilitando canales seguros de colaboración junto a Cruz Roja y ACNUR.",
+      "ground_truth_post": "Los terremotos del pasado 24 de junio en Venezuela han dejado una situación humanitaria crítica en la que más de seis millones de personas se han visto afectadas. Y en momentos así, cada aportación cuenta.\n\nEl equipo de BBVA Provincial en Venezuela está volcado en acompañar a empleados, clientes y comunidades. Su sede principal se ha convertido en centro de acopio y se han activado medidas para facilitar el acceso a servicios financieros en todo el país.\n\nDesde BBVA, anunciamos una donación de 5 millones de euros que se destinará a las diferentes iniciativas puestas en marcha por Cruz Roja, UNICEF, ACNUR y otras organizaciones locales. Ayuda que se destinará tanto a atender las necesidades más urgentes, como a las labores de reconstrucción posteriores.\n\nAdemás, equipos de distintas geografías del Grupo ya están en Venezuela prestando apoyo especializado, y BBVA en México ha puesto a disposición 28 toneladas de ayuda humanitaria a través de la Secretaría de Relaciones Exteriores de México.\n\nSi quieres unirte, te detallamos cómo puedes colaborar en las campañas activas en las diferentes geografías. Consúltalo en la infografía 👇 o en esta noticia: https://lnkd.in/dTPFgQQn\n\nA nuestros 1.887 compañeros en Venezuela, a sus familias y allegados, a nuestros clientes y al pueblo venezolano: el apoyo y la solidaridad de todo el equipo de BBVA está con cada uno de vosotros y vosotras.\n\nBBVA. Un equipo, un corazón con Venezuela 💙",
+      "official_hashtags": [],
+      "expected_key_facts": [
+        "Cruz Roja",
+        "ACNUR",
+        "ayuda humanitaria",
+        "canales de donación seguros"
+      ],
+      "compliance_notes": "Rigurosidad en organizaciones colaboradoras y protocolos de donación.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_15",
+      "post_index": 15,
+      "title": "Historias humanas detrás de la transición sostenible",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "storytelling",
+      "kb_dependent": true,
+      "prompt": "Escribe un post en tono narrativo sobre cómo la sostenibilidad en BBVA se construye persona a persona, contando la labor de los gestores que ayudan a pymes y empresas en su transición ecológica.",
+      "ground_truth_post": "Detrás de las cifras de sostenibilidad\nhay pequeñas historias de grandes profesionales.\n\nY es que, que Noelia encuentre una oportunidad en cada conversación para que su cliente crezca de forma más verde: es sostenibilidad. Y que Pablo acompañe a las cooperativas agrícolas de la zona para que las nuevas generaciones no tengan que renunciar a sus raíces, también es sostenibilidad.\n\nEstas son algunas de las historias que celebramos en los Sustainability Global Awards 2026, que reconocen a los profesionales mejor han acompañado a los clientes empresa y las operaciones sostenibles más destacadas del último ejercicio.\n\nEste año, además, incorporamos una categoría dedicada a los gestores de pymes, las pequeñas y medianas empresas que son fundamentales en el tejido productivo de muchas economías.\n\nTe presentamos a los 26 gestores de Banca de Empresas e Instituciones y a las nueve de pymes que, conversación a conversación, cliente a cliente e historia a historia, han hecho realidad dos ideas clave: impulsar la sostenibilidad como motor de crecimiento y ser un auténtico socio estratégico para todas las empresas.\n\n¡Enhorabuena!💙\n\nToda la información aquí: https://lnkd.in/eWd7DH-v\n\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "transición ecológica",
+        "acompañamiento a pymes",
+        "sostenibilidad real"
+      ],
+      "compliance_notes": "Política General de Sostenibilidad: evitar greenwashing; foco en soluciones concretas.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_16",
+      "post_index": 16,
+      "title": "BBVA Quantum: Computación cuántica aplicada a finanzas y riesgos",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "producto",
+      "kb_dependent": true,
+      "prompt": "Escribe un post de divulgación tecnológica sobre el equipo de BBVA Quantum, explicando cómo colaboran con gigantes como IBM o D-Wave y aplican algoritmos cuánticos para optimizar carteras y riesgos financieros.",
+      "ground_truth_post": "Hay un equipo que se dedica a resolver los problemas financieros más complejos del mundo... usando tecnología cuántica ⚛️\n\nImagina que tienes que analizar millones de combinaciones para encontrar la mejor inversión posible o detectar un fraude antes de que ocurra. Eso es lo que hace nuestro equipo de BBVA Quantum: trabajar hoy con la tecnología más puntera para anticiparse, prevenir y resolver los problemas del mañana.\n\n🧑‍🔬 Con talento especializado: físicos y matemáticos que combinan rigor científico con aplicación al negocio. \n🤝 Formando parte de un ecosistema colaborativo: alianzas con referentes como IBM o D-Wave. \n⚙️ Con aplicaciones reales: desde 2020, llevan más de diez proyectos trabajando junto a áreas como Mercados Globales, Gestión de Activos o Prevención del Crimen Financiero.\n\n🏆 Y lo mejor es que trabajar con la tecnología de lo más pequeño puede traducirse en soluciones enormes, como las que nos han permitido entrar en el Top 10 mundial del Quantum Innovation Index de 2025. Todo un salto de escala.\n\nEl líder de Quantum, Escolástico Sánchez Martínez, tiene claro que ésta no es una apuesta aislada: \"en BBVA somos expertos en anticipación. Lo hicimos con la digitalización, con la IA, y ahora lo estamos haciendo con la cuántica.\"\n\n\n#LifeAtBBVA #BBVAQuantum #QuantumComputing",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#BBVAQuantum",
+        "#QuantumComputing"
+      ],
+      "expected_key_facts": [
+        "BBVA Quantum",
+        "IBM",
+        "D-Wave",
+        "Top 10 Quantum Innovation Index",
+        "Mercados Globales"
+      ],
+      "compliance_notes": "Citar socios tecnológicos reales; precisión técnica en computación cuántica.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_17",
+      "post_index": 17,
+      "title": "Presencia internacional: Visita a la oficina CIB de BBVA en Shanghái",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "cultura",
+      "kb_dependent": true,
+      "prompt": "Redacta un post de employer branding internacional mostrando la oficina de Corporate & Investment Banking de BBVA en Shanghái a través de la experiencia de Lin Li, destacando la conexión cultural entre España y Asia.",
+      "ground_truth_post": "🌏 Nǐ hǎo, Shanghái! 🇨🇳\n\nNuestra compañera Lin Li nos abre las puertas de la oficina de BBVA Corporate & Investment Banking en Shanghái, uno de los centros neurálgicos de la economía mundial.\n\n🏙️ Aquí, el talento local y el internacional colaboran en espacios abiertos con vistas a un skyline que nunca duerme y construyen puentes que unen culturas, equipos y clientes.\n\n¿Una curiosidad? Las salas de reuniones de la sede de Shangái rinden homenaje a algunos de los grandes maestros de la cultura española. Una forma de mostrar que, como su obra, aspiramos a ser universales sin renunciar a nuestras raíces.\n\n✨ Así es el equipo global de #LifeAtBBVA.\n\n🚀¿Buscas una carrera que conecte lo mejor de dos mundos? Empieza aquí: https://lnkd.in/dMdx2Nm2",
+      "official_hashtags": [
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "BBVA CIB Shanghái",
+        "Lin Li",
+        "puente cultural y financiero",
+        "equipo global"
+      ],
+      "compliance_notes": "Identidad global de BBVA sin revelar información sensible de clientes asiáticos.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_18",
+      "post_index": 18,
+      "title": "Sustainability Global Awards 2026: 6 operaciones de impacto real",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "datos",
+      "kb_dependent": true,
+      "prompt": "Publica un post institucional detallando los 6 deals sostenibles premiados en los Sustainability Global Awards 2026, citando los proyectos con Bloom Energy (EE.UU.), Sabesp (Brasil) y Ternium (México).",
+      "ground_truth_post": "Hay operaciones que cierran un trimestre. \nY hay operaciones que abren el futuro.\n\nEn los Sustainability Global Awards 2026 hemos reconocido a las personas que mejor acompañan a nuestros clientes hacia un mañana verde. Pero también a los 6 deals que demuestran que el mejor negocio es, también, el más responsable.\n\nHablamos de proyectos elegidos por su innovación, impacto y capacidad para transformar industrias completas. De proyectos que descarbonizan sectores como el siderúrgico, que impulsan la economía circular en el agroindustrial y que mejoran el acceso a recursos tan esenciales como el agua.\n\nHablamos de proyectos y deals con:\n🔋Bloom Energy, en Estados Unidos\n🌿Geli-Ar SA, en Argentina\n🏭Grupo La Patrona, en Perú\n💧Sabesp, en Brasil\n🔩Ternium, en México\n🚜Yara International, en Colombia\n\nSi queremos ser el socio estratégico de todos los segmentos de empresa, la sostenibilidad no es una opción, es nuestro auténtico motor.\n\nDesliza y descubre los 6 deals que están con los que queremos marcar el camino ➡️\n\n¡Enhorabuena a los equipos que lo hacen posible! 💙\n\n\n#LifeAtBBVA #Sostenibilidad",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#Sostenibilidad"
+      ],
+      "expected_key_facts": [
+        "Sustainability Global Awards 2026",
+        "Bloom Energy",
+        "Sabesp",
+        "Ternium",
+        "descarbonización",
+        "economía circular"
+      ],
+      "compliance_notes": "GDPR y confidencialidad comercial: solo operaciones públicas y autorizadas por los clientes corporativos.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_19",
+      "post_index": 19,
+      "title": "Celebración global del Orgullo LGTBIQ+ en BBVA",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "cultura",
+      "kb_dependent": true,
+      "prompt": "Escribe un post de celebración de la semana del Orgullo LGTBIQ+ en las diferentes geografías de BBVA, destacando la creación de espacios seguros y el compromiso colectivo con la diversidad.",
+      "ground_truth_post": "💙Vivimos y reivindicamos el Orgullo LGTBIQ+...\nen cada geografía, con cada acento.\n\nDurante estas semanas hemos compartido acciones y reflexiones en equipo, con otras empresas y organizaciones y con la ciudadanía de los diferentes países en los que estamos presentes.\n\nForos en los que dar voz a quienes no siempre la tienen, encuentros para reflexionar sobre nuestros propios sesgos, espacios en los que celebrar de lo que somos, y luces para iluminar un futuro más inclusivo.\n\nPorque cada iniciativa, grande o pequeña, suma a un mismo deseo: el de construir un auténtico espacio seguro para todas las personas, una cultura donde cada una de ellas pueda ser quien es con autenticidad, respeto y orgullo. \n\nY ese BBVA de inclusión y colores, lo construimos juntos.\nAsí hemos celebrado el #Orgullo2026 por el mundo 🟥👇🟧\n\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#Orgullo2026",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Orgullo global",
+        "espacios seguros",
+        "autenticidad y respeto"
+      ],
+      "compliance_notes": "Inclusión y valores de marca sin fines partidistas o políticos.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_20",
+      "post_index": 20,
+      "title": "Jurado de los Premios ViVa 2026 y evaluación a ciegas",
+      "casuistica": "C2",
+      "complexity": "baja",
+      "context_level": "alto",
+      "category": "cultura",
+      "kb_dependent": true,
+      "prompt": "Escribe un post sobre el jurado de los Premios ViVa 2026 de BBVA, explicando cómo pasaron de más de 127.000 candidatos a 34 finalistas evaluando historias mediante una fase 'a ciegas' sin nombres ni países.",
+      "ground_truth_post": "Meet the jury! ☝️\nEn sus manos está quienes serán nuestros Premios Viva 2026.\n\nSe acerca una nueva edición de los #PremiosViVaBBVA, que reconocen cada año a los mejores embajadores de nuestra cultura corporativa. Son esas personas que, con su trabajo, nos inspiran y son un ejemplo de cómo acompañamos al cliente, pensamos en grande y trabajamos como un solo equipo.\n\nHemos pasado de más de 127.000 candidatos a 34 finalistas, todos ellos reconocidos en procesos locales y de área. Ahora, nuestro flamante jurado debe elegir qué 12 personas ascenderán a la cima de la cultura BBVA.\n\nEstamos acostumbrados a que los jurados evalúen voces, imitaciones o talentos inauditos pero, ¿imaginas hacerlo con la cultura y la historia de otro compañero? Nadie mejor que una selección de responsables y líderes globales y ganadores ViVa de años anteriores para ponerse a ello.\n\nHan empezado con una fase a ciegas, donde los nueve miembros del jurado han valorado cada historia sin conocer nombres, países o roles. De esta forma, han podido centrarse en el impacto real del trabajo de cada compañero.\n\nAhora, los finalistas se están enfrentando a una entrevista con un miembro del jurado. Y aunque llegan con los nervios a flor de piel, nos cuentan que cada encuentro está siendo un espacio para compartir vivencias, anécdotas y mucho orgullo corporativo.\n\nMuy pronto conocerás a los 34 finalistas. Entre ellos están las 12 personas que representarán el BBVA del que venimos, el que somos, y al que queremos llegar.\n\n#LifeAtBBVA",
+      "official_hashtags": [
+        "#PremiosViVaBBVA",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Premios ViVa",
+        "+127.000 candidatos",
+        "34 finalistas",
+        "evaluación a ciegas",
+        "12 ganadores"
+      ],
+      "compliance_notes": "Cifras oficiales exactas del certamen interno de cultura.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_21",
+      "post_index": 21,
+      "title": "Datathon BeTalent BBVA 2026: 40 promesas del Data Science",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "rrhh",
+      "kb_dependent": true,
+      "prompt": "Redacta un post para LinkedIn sobre la jornada final del Datathon BeTalent BBVA 2026, donde 40 candidatos de Data Science resolvieron retos técnicos durante 8 horas, invitando a futuros profesionales a postular.",
+      "ground_truth_post": "Juntas en una sala a 40 de las mentes más prometedoras del Data Science.\n\nY pasa el Datathon #BeTalentBBVA 2026.\n\nEs mucho más que la fase final del proceso de selección de nuestro programa de talento. Durante 8 horas intensas, los candidatos han resuelto retos técnicos complejos y conversado cara a cara con los líderes de las áreas de Data. En definitiva, han demostrado que el futuro del dato en BBVA es humano y colaborativo.\n\nGracias a todos los candidatos por el nivel, la actitud y la energía que trajisteis a la jornada: ¡la suerte está echada!. Y gracias a nuestros mánagers y mentores y al equipo de Talent Acquisition por hacer posible una experiencia tan única y refrescante.\n\n¿Quieres ser el próximo? Busca tu oportunidad. Aquí, hablamos tu mismo idioma: https://bbva.info/3Rt2YAP \n\n#LifeAtBBVA\n#BeTalentBBVA",
+      "official_hashtags": [
+        "#BeTalentBBVA",
+        "#LifeAtBBVA"
+      ],
+      "expected_key_facts": [
+        "Datathon BeTalent BBVA 2026",
+        "40 candidatos",
+        "Data Science",
+        "8 horas",
+        "enlace bbva.info"
+      ],
+      "compliance_notes": "Llamada a la acción con enlace verídico de selección.",
+      "org_urn": "urn:li:organization:136115687"
+    },
+    {
+      "id": "bbva_22",
+      "post_index": 22,
+      "title": "Criptografía cuántica y aleatoriedad QRNG en ciberseguridad financiera",
+      "casuistica": "C4",
+      "complexity": "alta",
+      "context_level": "alto",
+      "category": "producto",
+      "kb_dependent": true,
+      "prompt": "Escribe un post divulgativo de alta tecnología sobre cómo BBVA investiga la aleatoriedad cuántica mediante Generadores Cuánticos de Números Aleatorios (QRNG) para blindar claves criptográficas y simulaciones de riesgo Montecarlo.",
+      "ground_truth_post": "¿Y si el desorden para el más seguro de los futuros la clave fuera?\nVamos a ordenarnos y a explicarte de qué estamos hablando.\n\nPorque, sin duda, esta paradoja es una de las fronteras más apasionantes de la innovación. Los sistemas criptográficos actuales se basan en la aleatoriedad, pero ésta casi nunca es total, pues suele dejar pequeñas fisuras y patrones que pueden ser explotados.\n\nAquí es donde la mecánica cuántica lo cambia todo. Su naturaleza, intrínsecamente impredecible, nos ofrece \"entropía pura\": un caos perfecto que se convierte en un activo estratégico para la seguridad.\n\nEn BBVA ya estamos investigando cómo esta tecnología puede reforzar la integridad del sector financiero:\n\n🛡️ Generación de claves irrompibles: Usando Generadores Cuánticos de Números Aleatorios (QRNG) para crear secuencias sin ningún patrón descifrable.\n💪 Una capa extra de seguridad: No se trata de sustituir por completo los algoritmos actuales, sino de reforzarlos con un nivel de protección cuántica.\n📊 Simulaciones de negocio más precisas: Aplicando esta aleatoriedad perfecta para mejorar la precisión de procesos complejos, como el método Montecarlo para escenarios de riesgo.\n\nSi ya has leído y comprendido los 3 conceptos que te presentamos en la infogrfía, ahora descubre cómo el \"desorden\" cuántico se está convirtiendo en nuestro mejor aliado: ➡️https://bbva.info/44mCtA4 \n\n#LifeAtBBVA #Ciberseguridad",
+      "official_hashtags": [
+        "#LifeAtBBVA",
+        "#Ciberseguridad"
+      ],
+      "expected_key_facts": [
+        "Generadores Cuánticos de Números Aleatorios",
+        "QRNG",
+        "simulaciones Montecarlo",
+        "ciberseguridad financiera",
+        "enlace bbva.info"
+      ],
+      "compliance_notes": "Máxima precisión en conceptos de física y criptografía; no prometer sistemas 100% invulnerables.",
+      "org_urn": "urn:li:organization:136115687"
+    }
+  ]
+}

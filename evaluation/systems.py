@@ -185,10 +185,61 @@ def generate_with_baseline_vanilla(prompt: str, org_urn: str) -> dict:
     return {"content": content, "hashtags": [], "latency_s": latency, "token_usage": usage}
 
 
+COMMERCIAL_USER_PROMPT = """Escribe una publicación para LinkedIn sobre la siguiente petición:
+
+"{prompt}"
+
+Devuelve directamente el texto de la publicación para publicarlo en LinkedIn."""
+
+
+def generate_with_gemini_commercial(prompt: str, org_urn: str = "") -> dict:
+    """
+    Simula el uso directo de Google Gemini por un usuario final en su web/interfaz comercial.
+    Usa el modelo Gemini comercial sin contexto corporativo, RAG ni agentes de validación.
+    """
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    model_name = os.getenv("GEMINI_COMMERCIAL_MODEL", "gemini-2.5-flash")
+    llm = ChatGoogleGenerativeAI(model=model_name, google_api_key=GENAI_API_KEY, temperature=0.7)
+
+    def _run():
+        raw = llm.invoke(COMMERCIAL_USER_PROMPT.format(prompt=prompt)).content
+        if isinstance(raw, list):
+            raw = "\n".join(p if isinstance(p, str) else p.get("text", str(p)) for p in raw)
+        return raw.strip()
+
+    content, latency, usage = _timed(_run)
+    return {"content": content, "hashtags": [], "latency_s": latency, "token_usage": usage, "model": model_name}
+
+
+def generate_with_chatgpt_commercial(prompt: str, org_urn: str = "") -> dict:
+    """
+    Simula el uso directo de ChatGPT (OpenAI) por un usuario final en su interfaz comercial.
+    Usa gpt-4o (o OPENAI_MODEL) sin contexto corporativo, RAG ni validación agéntica.
+    """
+    openai_key = os.getenv("OPENAI_API_KEY")
+    if not openai_key:
+        raise RuntimeError(
+            "Se requiere la variable de entorno OPENAI_API_KEY en .env para evaluar directamente ChatGPT (OpenAI)."
+        )
+
+    from langchain_openai import ChatOpenAI
+    model_name = os.getenv("OPENAI_MODEL", "gpt-4o")
+    llm = ChatOpenAI(model=model_name, api_key=openai_key, temperature=0.7)
+
+    def _run():
+        raw = llm.invoke(COMMERCIAL_USER_PROMPT.format(prompt=prompt)).content
+        return raw.strip()
+
+    content, latency, usage = _timed(_run)
+    return {"content": content, "hashtags": [], "latency_s": latency, "token_usage": usage, "model": model_name}
+
+
 def generate(system: str, prompt: str, org_urn: str) -> dict:
     """
     Punto de entrada único. Sistemas soportados:
-    'aipost', 'baseline_context', 'baseline_vanilla', 'aipost_no_<capacidad>'.
+    'aipost', 'baseline_context', 'baseline_vanilla',
+    'gemini_commercial' / 'gemini', 'chatgpt_commercial' / 'chatgpt',
+    'aipost_no_<capacidad>'.
     """
     if system == "aipost":
         return generate_with_aipost(prompt, org_urn)
@@ -196,6 +247,10 @@ def generate(system: str, prompt: str, org_urn: str) -> dict:
         return generate_with_baseline_context(prompt, org_urn)
     if system == "baseline_vanilla":
         return generate_with_baseline_vanilla(prompt, org_urn)
+    if system in ("gemini_commercial", "gemini"):
+        return generate_with_gemini_commercial(prompt, org_urn)
+    if system in ("chatgpt_commercial", "chatgpt"):
+        return generate_with_chatgpt_commercial(prompt, org_urn)
     if system.startswith("aipost_no_"):
         capability = system.removeprefix("aipost_no_")
         if capability not in ABLATABLE:

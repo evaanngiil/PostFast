@@ -27,12 +27,14 @@ from evaluation.systems import generate  # noqa: E402
 DEFAULT_DATASET = Path(__file__).parent / "dataset.json"
 
 
-def load_dataset(path: str, limit: int | None, only_kb: bool) -> list[dict]:
+def load_dataset(path: str, limit: int | None, only_kb: bool, casuisticas: list[str] | None = None) -> list[dict]:
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     cases = data["cases"]
     if only_kb:
         cases = [c for c in cases if c.get("kb_dependent")]
+    if casuisticas:
+        cases = [c for c in cases if c.get("casuistica") in casuisticas]
     if limit:
         cases = cases[:limit]
     return cases
@@ -56,15 +58,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Generación de salidas para la evaluación comparativa de AIPost.")
     parser.add_argument("--org-urn", required=True, help="URN de la organización con perfil y RAG ya indexados.")
     parser.add_argument("--systems", default="aipost,baseline_context,baseline_vanilla",
-                        help="Sistemas separados por coma (aipost, baseline_context, baseline_vanilla, aipost_no_<capacidad>).")
+                        help="Sistemas separados por coma (aipost, baseline_context, baseline_vanilla, gemini_commercial, chatgpt_commercial, aipost_no_<capacidad>).")
     parser.add_argument("--dataset", default=str(DEFAULT_DATASET))
+    parser.add_argument("--casuistica", default=None, help="Filtrar por casuísticas separadas por coma (ej. C1,C2,C3,C4).")
     parser.add_argument("--out", default=None, help="Ruta del JSONL de salida (por defecto evaluation/results/run_<fecha>.jsonl).")
     parser.add_argument("--limit", type=int, default=None, help="Limita el número de casos (pruebas rápidas / cuota).")
     parser.add_argument("--only-kb-dependent", action="store_true", help="Solo casos que dependen de la base de conocimientos.")
     args = parser.parse_args()
 
     systems = [s.strip() for s in args.systems.split(",") if s.strip()]
-    cases = load_dataset(args.dataset, args.limit, args.only_kb_dependent)
+    casuisticas = [c.strip() for c in args.casuistica.split(",") if c.strip()] if args.casuistica else None
+    cases = load_dataset(args.dataset, args.limit, args.only_kb_dependent, casuisticas)
 
     out_path = Path(args.out) if args.out else (
         Path(__file__).parent / "results" / f"run_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M')}.jsonl"
@@ -87,11 +91,18 @@ def main() -> None:
                 logger.info("[eval] Generando %s con '%s'...", case["id"], system)
                 record = {
                     "case_id": case["id"],
+                    "title": case.get("title"),
                     "category": case.get("category"),
+                    "casuistica": case.get("casuistica"),
+                    "complexity": case.get("complexity"),
+                    "context_level": case.get("context_level"),
                     "kb_dependent": case.get("kb_dependent"),
                     "prompt": case["prompt"],
                     "system": system,
                     "org_urn": args.org_urn,
+                    "ground_truth_post": case.get("ground_truth_post"),
+                    "official_hashtags": case.get("official_hashtags"),
+                    "expected_key_facts": case.get("expected_key_facts"),
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                 }
                 try:

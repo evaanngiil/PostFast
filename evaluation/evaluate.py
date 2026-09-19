@@ -23,6 +23,7 @@ from src.core.logger import logger  # noqa: E402
 from evaluation.metrics import compute_all_metrics  # noqa: E402
 from evaluation.judges import judge_pair  # noqa: E402
 from evaluation.contexts import build_shared_context  # noqa: E402
+from evaluation.ground_truth_metrics import evaluate_against_ground_truth  # noqa: E402
 
 
 def load_records(path: Path) -> list[dict]:
@@ -36,12 +37,26 @@ def load_records(path: Path) -> list[dict]:
     return [r for r in records if not r.get("error") and r.get("content")]
 
 
-def run_metrics(records: list[dict]) -> None:
+def run_metrics(records: list[dict], skip_audit: bool = False, skip_ground_truth: bool = False) -> None:
     for i, rec in enumerate(records, 1):
-        if rec.get("metrics"):
-            continue
-        logger.info("[evaluate] Métricas %d/%d (%s/%s)...", i, len(records), rec["case_id"], rec["system"])
-        rec["metrics"] = compute_all_metrics(rec["content"], rec["org_urn"])
+        if "metrics" not in rec or not isinstance(rec["metrics"], dict):
+            rec["metrics"] = {}
+
+        # Métricas objetivas estándar (Fact Checker CRAG, Safety Guard, Duplicación, Forma)
+        if not skip_audit and "factuality" not in rec["metrics"]:
+            logger.info("[evaluate] Métricas auditoría %d/%d (%s/%s)...", i, len(records), rec["case_id"], rec["system"])
+            rec["metrics"].update(compute_all_metrics(rec["content"], rec["org_urn"]))
+
+        # Métricas cuantitativas frente a Ground Truth humano
+        gt_post = rec.get("ground_truth_post")
+        if gt_post and not skip_ground_truth and "ground_truth" not in rec["metrics"]:
+            logger.info("[evaluate] Métricas Ground Truth %d/%d (%s/%s)...", i, len(records), rec["case_id"], rec["system"])
+            rec["metrics"]["ground_truth"] = evaluate_against_ground_truth(
+                candidate_content=rec.get("content", ""),
+                ground_truth_post=gt_post,
+                expected_hashtags=rec.get("official_hashtags") or [],
+                expected_key_facts=rec.get("expected_key_facts") or [],
+            )
 
 
 def _judge_context(org_urn: str, prompt: str, output_1: str, output_2: str) -> str:
@@ -157,32 +172,123 @@ def build_report(records: list[dict], judgments: list[dict], reference: str) -> 
     lines.append(f"- Sistema de referencia: `{reference}`")
     lines.append("")
 
-    # ---- Métricas objetivas ----
-    lines.append("## Métricas objetivas (auditores: Fact Checker CRAG y Safety Guard)")
-    lines.append("")
-    lines.append("| Sistema | Tasa verificación claims | Alucinaciones/post | Pasa gate compliance | Infracciones graves/post | Similitud máx. c/ histórico | Hashtags OK | Latencia media (s) | Tokens medios |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
-    for s in systems:
-        recs = by_system[s]
-        fact = [r.get("metrics", {}).get("factuality", {}) for r in recs]
-        comp = [r.get("metrics", {}).get("compliance", {}) for r in recs]
-        dup = [r.get("metrics", {}).get("duplication", {}) for r in recs]
-        form = [r.get("metrics", {}).get("form", {}) for r in recs]
-        ver_rate = _mean([f.get("verification_rate") for f in fact])
-        halluc = _mean([f.get("n_unverified_claims") for f in fact])
-        approved = _mean([1 if c.get("passes_gate", c.get("approved")) else 0 for c in comp if c])
-        grave = _mean([
-            c.get("n_issues", 0) if c.get("severity") in ("medium", "high", "critical") else 0
-            for c in comp if c
-        ])
-        sim = _mean([d.get("max_similarity_to_history") for d in dup])
-        ht_ok = _mean([1 if f.get("hashtags_in_range") else 0 for f in form if f])
-        lat = _mean([r.get("latency_s") for r in recs])
-        tok = _mean([(r.get("token_usage") or {}).get("total_tokens") for r in recs])
+    # ---- Métricas objetivas (Auditores) ----
+    has_audit = any("factuality" in (r.get("metrics") or {}) for r in records)
+    if has_audit:
+        lines.append("## Métricas objetivas (auditores: Fact Checker CRAG y Safety Guard)")
+        lines.append("")
+        lines.append("| Sistema | Tasa verificación claims | Alucinaciones/post | Pasa gate compliance | Infracciones graves/post | Similitud máx. c/ histórico | Hashtags OK | Latencia media (s) | Tokens medios |")
+        lines.append("|---|---|---|---|---|---|---|---|---|")
+        for s in systems:
+            recs = by_system[s]
+            fact = [r.get("metrics", {}).get("factuality", {}) for r in recs]
+            comp = [r.get("metrics", {}).get("compliance", {}) for r in recs]
+            dup = [r.get("metrics", {}).get("duplication", {}) for r in recs]
+            form = [r.get("metrics", {}).get("form", {}) for r in recs]
+            ver_rate = _mean([f.get("verification_rate") for f in fact])
+            halluc = _mean([f.get("n_unverified_claims") for f in fact])
+            approved = _mean([1 if c.get("passes_gate", c.get("approved")) else 0 for c in comp if c])
+            grave = _mean([
+                c.get("n_issues", 0) if c.get("severity") in ("medium", "high", "critical") else 0
+                for c in comp if c
+            ])
+            sim = _mean([d.get("max_similarity_to_history") for d in dup])
+            ht_ok = _mean([1 if f.get("hashtags_in_range") else 0 for f in form if f])
+            lat = _mean([r.get("latency_s") for r in recs])
+            tok = _mean([(r.get("token_usage") or {}).get("total_tokens") for r in recs])
+            lines.append(
+                f"| {s} | {ver_rate:.1%} | {halluc:.2f} | {approved:.1%} | {grave:.2f} | {sim:.3f} | {ht_ok:.1%} | {lat:.1f} | {tok:.0f} |"
+            )
+        lines.append("")
+
+    # ---- Métricas cuantitativas frente a Ground Truth humano (BBVA) ----
+    gt_recs = [r for r in records if (r.get("metrics") or {}).get("ground_truth")]
+    if gt_recs:
+        lines.append("## Comparativa cuantitativa frente a Ground Truth humano (BBVA)")
+        lines.append("")
         lines.append(
-            f"| {s} | {ver_rate:.1%} | {halluc:.2f} | {approved:.1%} | {grave:.2f} | {sim:.3f} | {ht_ok:.1%} | {lat:.1f} | {tok:.0f} |"
+            "Esta sección evalúa numéricamente el grado de alineación, fidelidad y cercanía estilística, "
+            "léxica y factual de cada sistema respecto a los posts reales redactados y publicados por profesionales "
+            "de comunicación de BBVA en LinkedIn (Ground Truth humano real)."
         )
-    lines.append("")
+        lines.append("")
+        lines.append("### Resumen global frente a Ground Truth")
+        lines.append("")
+        lines.append(
+            "| Sistema | Similitud semántica (Cosine) | ROUGE-1 F1 | ROUGE-2 F1 | ROUGE-L F1 | BLEU | "
+            "Cobertura hechos clave | Precisión hashtags | Recall hashtags | Hashtags F1 | Presencia #LifeAtBBVA | Ratio longitud |"
+        )
+        lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+        for s in systems:
+            recs = [r for r in gt_recs if r["system"] == s]
+            if not recs:
+                continue
+            gt_metrics = [r["metrics"]["ground_truth"] for r in recs]
+            sem_sim = _mean([g.get("semantic_similarity") for g in gt_metrics])
+            r1 = _mean([g.get("rouge", {}).get("rouge1_f1") for g in gt_metrics])
+            r2 = _mean([g.get("rouge", {}).get("rouge2_f1") for g in gt_metrics])
+            rl = _mean([g.get("rouge", {}).get("rougeL_f1") for g in gt_metrics])
+            bleu = _mean([g.get("bleu") for g in gt_metrics])
+            facts_cov = _mean([g.get("key_facts", {}).get("coverage_rate") for g in gt_metrics])
+            ht_p = _mean([g.get("hashtags", {}).get("precision") for g in gt_metrics])
+            ht_r = _mean([g.get("hashtags", {}).get("recall") for g in gt_metrics])
+            ht_f1 = _mean([g.get("hashtags", {}).get("f1") for g in gt_metrics])
+            anchor = _mean([1 if g.get("hashtags", {}).get("has_brand_anchor") else 0 for g in gt_metrics])
+            len_ratio = _mean([g.get("length", {}).get("length_ratio") for g in gt_metrics])
+            lines.append(
+                f"| {s} | {sem_sim:.3f} | {r1:.3f} | {r2:.3f} | {rl:.3f} | {bleu:.3f} | "
+                f"{facts_cov:.1%} | {ht_p:.1%} | {ht_r:.1%} | {ht_f1:.3f} | {anchor:.1%} | {len_ratio:.2f} |"
+            )
+        lines.append("")
+
+        # Desglose por casuística (Matriz 2x2: Complejidad x Contexto)
+        casuisticas = sorted({r.get("casuistica") for r in gt_recs if r.get("casuistica")})
+        if casuisticas:
+            lines.append("### Desglose por Casuística (Matriz 2×2: Complejidad × Contexto)")
+            lines.append("")
+            casuistica_labels = {
+                "C1": "C1: Baja Complejidad × Bajo Contexto (Hitos cotidianos, aniversarios)",
+                "C2": "C2: Baja Complejidad × Alto Contexto (Cultura interna, BBVA Tech / The Place)",
+                "C3": "C3: Alta Complejidad × Bajo Contexto (Tendencias sectoriales, fintech macro)",
+                "C4": "C4: Alta Complejidad × Alto Contexto (Finanzas, planes ESG y compliance)",
+            }
+            lines.append("| Casuística | Sistema | Similitud semántica | ROUGE-L F1 | Cobertura hechos | Hashtags F1 | Presencia #LifeAtBBVA |")
+            lines.append("|---|---|---|---|---|---|---|")
+            for c_code in casuisticas:
+                c_label = casuistica_labels.get(c_code, c_code)
+                for s in systems:
+                    c_recs = [r for r in gt_recs if r.get("casuistica") == c_code and r["system"] == s]
+                    if not c_recs:
+                        continue
+                    c_gt = [r["metrics"]["ground_truth"] for r in c_recs]
+                    sem_sim = _mean([g.get("semantic_similarity") for g in c_gt])
+                    rl = _mean([g.get("rouge", {}).get("rougeL_f1") for g in c_gt])
+                    facts_cov = _mean([g.get("key_facts", {}).get("coverage_rate") for g in c_gt])
+                    ht_f1 = _mean([g.get("hashtags", {}).get("f1") for g in c_gt])
+                    anchor = _mean([1 if g.get("hashtags", {}).get("has_brand_anchor") else 0 for g in c_gt])
+                    lines.append(f"| {c_label} | {s} | {sem_sim:.3f} | {rl:.3f} | {facts_cov:.1%} | {ht_f1:.3f} | {anchor:.1%} |")
+            lines.append("")
+
+        # Comparativa Cualitativa de Muestra (Ejemplo representativo)
+        sample_cases = [r["case_id"] for r in gt_recs if r.get("casuistica") in ("C4", "C2")]
+        if not sample_cases:
+            sample_cases = [r["case_id"] for r in gt_recs]
+        if sample_cases:
+            target_case_id = sample_cases[0]
+            case_records = {r["system"]: r for r in gt_recs if r["case_id"] == target_case_id}
+            first_rec = next(iter(case_records.values()))
+            lines.append("### Muestra cualitativa comparativa (Caso representativo)")
+            lines.append("")
+            lines.append(f"**Caso**: `{target_case_id}` — *{first_rec.get('title', '')}* (Casuística: `{first_rec.get('casuistica', 'N/A')}`)")
+            lines.append("")
+            lines.append(f"**Prompt de entrada**:\n> {first_rec.get('prompt', '')}")
+            lines.append("")
+            gt_text = first_rec.get("ground_truth_post") or ""
+            lines.append(f"#### Ground Truth Humano (BBVA Real):\n```text\n{gt_text.strip()}\n```\n")
+            for sys_name in systems:
+                if sys_name in case_records:
+                    sys_content = case_records[sys_name].get("content", "").strip()
+                    lines.append(f"#### Salida sistema: `{sys_name}`\n```text\n{sys_content}\n```\n")
 
     # ---- Juez ciego ----
     if judgments:
@@ -239,10 +345,10 @@ def build_report(records: list[dict], judgments: list[dict], reference: str) -> 
         lines.append("")
 
     lines.append("---")
-    lines.append("*Generado por `evaluation/evaluate.py`. Metodología: juez ciego con orden A/B aleatorizado, "
-                 "modelo de juez distinto del generador, métricas objetivas mediante auditoría CRAG claim-por-claim "
-                 "aplicada simétricamente a todos los sistemas, y anexo de auditoría factual entregado al juez para "
-                 "la dimensión factual_grounding (mitiga el sesgo de contexto parcial del juez).*")
+    lines.append("*Generado por `evaluation/evaluate.py`. Metodología: comparación frente a Ground Truth humano real (BBVA), "
+                 "juez ciego con orden A/B aleatorizado, modelo de juez distinto del generador, métricas objetivas mediante "
+                 "auditoría CRAG claim-por-claim aplicada simétricamente a todos los sistemas, y anexo de auditoría factual "
+                 "entregado al juez para la dimensión factual_grounding.*")
     return "\n".join(lines)
 
 
@@ -252,6 +358,8 @@ def main() -> None:
     parser.add_argument("--reference-system", default="aipost")
     parser.add_argument("--no-judge", action="store_true", help="Omite el juez LLM (solo métricas objetivas).")
     parser.add_argument("--no-metrics", action="store_true", help="Omite las métricas objetivas (solo juez).")
+    parser.add_argument("--skip-audit", action="store_true", help="Omite la auditoría LLM (Fact Checker y Safety Guard), calculando solo Ground Truth.")
+    parser.add_argument("--no-ground-truth", action="store_true", help="Omite el cálculo de métricas frente a Ground Truth.")
     parser.add_argument("--seed", type=int, default=42, help="Semilla de la aleatorización A/B del juez.")
     args = parser.parse_args()
 
@@ -261,13 +369,13 @@ def main() -> None:
         raise SystemExit("No hay registros válidos en el fichero de resultados.")
 
     if not args.no_metrics:
-        run_metrics(records)
+        run_metrics(records, skip_audit=args.skip_audit, skip_ground_truth=args.no_ground_truth)
 
     judgments = []
     if not args.no_judge:
-        if args.no_metrics:
+        if args.no_metrics or args.skip_audit:
             logger.warning(
-                "[evaluate] Juzgando SIN métricas: el juez no recibirá el anexo de "
+                "[evaluate] Juzgando sin auditoría completa: el juez no recibirá el anexo de "
                 "auditoría factual y puede penalizar datos verificables (sesgo de contexto parcial)."
             )
         judgments = run_judgments(records, args.reference_system, args.seed)
