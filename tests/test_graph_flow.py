@@ -78,9 +78,9 @@ def test_full_pipeline_sequence_and_hitl_pause(compiled_graph_and_calls):
     assert calls[0] == "engagement_analyzer"
     assert calls[1] == "persona_analyst"
     assert set(calls[2:4]) == {"duplicate_detector", "trend_researcher"}
-    assert calls[4:] == ["idea_expander", "content_writer", "fact_checker", "safety_guard"]
+    assert calls[4:6] == ["idea_expander", "content_writer"]
+    assert set(calls[6:]) == {"fact_checker", "safety_guard"}
 
-    # Pausa HITL antes de human_review con el borrador disponible
     snapshot = graph.get_state(config)
     assert snapshot.next and "human_review" in snapshot.next
     assert result["draft_post"]["content"] == "borrador v1"
@@ -137,3 +137,52 @@ def test_edit_mode_skips_research_nodes(compiled_graph_and_calls):
     assert calls == ["content_editor"]
     snapshot = graph.get_state(config)
     assert snapshot.next and "human_review" in snapshot.next
+
+
+def test_parallel_validation_merges_node_metrics():
+    from langgraph.checkpoint.memory import MemorySaver
+
+    calls = []
+    overrides = {
+        "engagement_analyzer": make_stub({"engagement_analysis": {"ok": True}}, calls, "engagement_analyzer"),
+        "persona_analyst": make_stub({"brand_persona_json": {"tone": "pro"}}, calls, "persona_analyst"),
+        "duplicate_detector": make_stub({"existing_posts_on_topic": [], "duplicate_context": "nada"}, calls, "duplicate_detector"),
+        "trend_researcher": make_stub({"industry_trends": "tendencias"}, calls, "trend_researcher"),
+        "idea_expander": make_stub({"fleshed_out_idea": {"topic": "t"}}, calls, "idea_expander"),
+        "content_writer": make_stub(
+            {
+                "draft_post": {"content": "borrador v1", "hashtags": ["#a"], "call_to_action": "cta"},
+                "user_feedback": None,
+                "fact_check_report": None,
+                "safety_report": None,
+            },
+            calls, "content_writer",
+        ),
+        "fact_checker": make_stub(
+            {
+                "fact_check_report": {"overall_pass": True, "claims": []},
+                "node_metrics": {"fact_checker": {"duration_sec": 0.45}},
+            },
+            calls, "fact_checker",
+        ),
+        "safety_guard": make_stub(
+            {
+                "safety_report": {"approved": True, "severity": "none"},
+                "node_metrics": {"safety_guard": {"duration_sec": 0.32}},
+            },
+            calls, "safety_guard",
+        ),
+    }
+
+    graph = build_graph(node_overrides=overrides).compile(
+        checkpointer=MemorySaver(),
+        interrupt_before=["human_review"],
+    )
+
+    config = {"configurable": {"thread_id": str(uuid.uuid4())}}
+    state = graph.invoke(INITIAL_STATE, config=config)
+
+    assert "fact_checker" in state["node_metrics"]
+    assert "safety_guard" in state["node_metrics"]
+    assert state["node_metrics"]["fact_checker"]["duration_sec"] == 0.45
+    assert state["node_metrics"]["safety_guard"]["duration_sec"] == 0.32

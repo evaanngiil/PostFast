@@ -48,3 +48,18 @@ def test_resolve_falls_back_to_legacy_in_idea():
 def test_resolve_raises_without_inputs():
     with pytest.raises(ValueError):
         _resolve_edit_inputs({"user_post_idea": "idea normal sin protocolo de edición"})
+
+
+def test_resolve_handles_empty_instructions():
+    state = {"original_post": "post original", "edit_instructions": ""}
+    base, instructions = _resolve_edit_inputs(state)
+    assert base == "post original"
+    assert "Optimiza y pule" in instructions
+
+
+def test_resolve_handles_edit_mode_with_idea_fallback():
+    state = {"edit_mode": True, "user_post_idea": "post a editar"}
+    base, instructions = _resolve_edit_inputs(state)
+    assert base == "post a editar"
+    assert "Optimiza y pule" in instructions
+

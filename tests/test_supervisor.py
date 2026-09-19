@@ -55,8 +55,15 @@ def test_phase4_idea_then_writer():
     assert supervisor_router_logic(state_with(draft_post=None, user_feedback=None)) == "content_writer"
 
 
-def test_phase5_fact_check_then_safety():
+def test_phase5_parallel_fanout_fact_check_and_safety():
+    assert supervisor_router_logic(state_with(fact_check_report=None, safety_report=None)) == ["fact_checker", "safety_guard"]
+
+
+def test_phase5_only_fact_check_pending():
     assert supervisor_router_logic(state_with(fact_check_report=None)) == "fact_checker"
+
+
+def test_phase5_only_safety_pending():
     assert supervisor_router_logic(state_with(safety_report=None)) == "safety_guard"
 
 
@@ -64,17 +71,15 @@ def test_complete_state_goes_to_human_review():
     assert supervisor_router_logic(state_with()) == "human_review"
 
 
-# ---------- Bucles de corrección ----------
-
-def test_failed_fact_check_recycles_to_writer():
+def test_failed_fact_check_recycles_to_editor():
     state = state_with(fact_check_report={"overall_pass": False, "claims": [{"verified": False}]})
-    assert supervisor_router_logic(state) == "content_writer"
+    assert supervisor_router_logic(state) == "content_editor"
 
 
-def test_failed_safety_medium_or_higher_recycles_to_writer():
+def test_failed_safety_medium_or_higher_recycles_to_editor():
     for severity in ("medium", "high", "critical"):
         state = state_with(safety_report={"approved": False, "severity": severity})
-        assert supervisor_router_logic(state) == "content_writer", severity
+        assert supervisor_router_logic(state) == "content_editor", severity
 
 
 def test_failed_safety_low_severity_does_not_recycle():
