@@ -188,14 +188,32 @@ def search_knowledge(
             "filter_source_type": source_type,
         }).execute()
 
-        rows = result.data or []
-        # Defensa en profundidad: la RPC ya excluye las copias de documento
-        # completo (migración 002), pero filtramos también en cliente por si
-        # se ejecuta contra una BD sin la migración aplicada.
-        return [
-            r for r in rows
+        rows = [
+            r for r in (result.data or [])
             if (r.get("metadata") or {}).get("is_full_document") is not True
         ]
+
+        if len(rows) < limit:
+            clean_words = [
+                w.strip("\"',.:;()")
+                for w in query.split()
+                if len(w.strip("\"',.:;()")) >= 4
+                and w.lower() not in (
+                    "para", "sobre", "como", "este", "esta", "estos", "estas",
+                    "publicar", "post", "linkedin", "empresa", "nuestra", "nuestro"
+                )
+            ]
+            if clean_words:
+                kw_query = supabase.table("company_knowledge").select("id, content, source_type, source_id, metadata").eq("org_urn", org_urn)
+                if source_type:
+                    kw_query = kw_query.eq("source_type", source_type)
+                kw_res = kw_query.ilike("content", f"%{clean_words[0]}%").limit(limit - len(rows)).execute()
+                existing_ids = {r.get("id") for r in rows}
+                for kr in (kw_res.data or []):
+                    if kr.get("id") not in existing_ids and (kr.get("metadata") or {}).get("is_full_document") is not True:
+                        rows.append(kr)
+
+        return rows
     except Exception as e:
         logger.error(f"Error en search_knowledge para {org_urn}: {e}")
         return []

@@ -87,54 +87,20 @@ REDIS_PORT = os.getenv("REDIS_PORT")
 REDIS_URL = f"redis://{REDIS_HOST}:{REDIS_PORT}"
 
 
-# Límites diarios del free-tier (RPD):
-#   gemini-2.5-flash         20 RPD  
-#   gemini-2.5-flash-lite    20 RPD 
-#   gemini-3-flash           20 RPD 
-#   gemini-3.1-flash-lite-preview   500 RPD
-#   gemini-2.5-pro            0 RPD  
-
-# Helpers de importación diferida (lazy load) para compatibilidad con LLMFactory.
-def get_smart_llm(name: str = "gemini-2.5-flash"):
-    """
-    Instancia el LLM configurado para tareas complejas vía lazy import.
-
-    :param name: Nombre del modelo LLM a inicializar.
-    :returns: Objeto del modelo instanciado.
-    """
+def get_smart_llm(name: str = "gemini-3.6-flash"):
     from src.agents.utils.llm_factory import LLMFactory
     return LLMFactory.get_llm(llm_name=name)
 
 def get_fast_llm(name: str = "gemini-3.1-flash-lite-preview"):
-    """
-    Instancia el LLM configurado para tareas rápidas y triviales vía lazy import.
-
-    :param name: Nombre del modelo LLM a inicializar.
-    :returns: Objeto del modelo instanciado.
-    """
     from src.agents.utils.llm_factory import LLMFactory
     return LLMFactory.get_llm(llm_name=name)
 
-# Jerarquía de modelos configurable por entorno. Por defecto todos apuntan al
-# modelo con mayor cuota del free-tier; en evaluación/producción se pueden
-# diferenciar sin tocar código (p. ej. SMART_LLM=gemini-2.5-flash).
 _DEFAULT_LLM = os.getenv("AIPOST_DEFAULT_LLM", "gemini-3.1-flash-lite-preview")
-
-# Modelo designado para tareas creativas o de razonamiento complejo (ej. redacción de posts).
 SMART_LLM = os.getenv("SMART_LLM", _DEFAULT_LLM)
-
-# Modelo designado para tareas deterministas o de alta frecuencia (ej. parsers, formato JSON).
 MEDIUM_LLM = os.getenv("MEDIUM_LLM", _DEFAULT_LLM)
-
-# Modelo designado para procesamiento batch de análisis de posts.
 ANALYSIS_LLM = os.getenv("ANALYSIS_LLM", _DEFAULT_LLM)
-
-# Modelo designado para tareas de complejidad media (ej. web scraping, brainstroming).
 FAST_LLM = os.getenv("FAST_LLM", _DEFAULT_LLM)
-
-# Modelo del juez de la evaluación comparativa (distinto del generador para
-# mitigar el sesgo de auto-preferencia en LLM-as-judge).
-JUDGE_LLM = os.getenv("JUDGE_LLM", "gemini-2.5-flash")
+JUDGE_LLM = os.getenv("JUDGE_LLM", "gemini-3.6-flash")
 
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")

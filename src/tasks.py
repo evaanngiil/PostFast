@@ -153,8 +153,10 @@ def publish_post_task(self, platform, account_id, access_token, content, **kwarg
             page_access_token = kwargs.get('page_access_token', access_token)
             ig_user_id = account_id
             image_url = kwargs.get('image_url')
-            if not page_access_token: raise ValueError("Falta page_access_token para el post de Instagram")
-            if not image_url: raise ValueError("Falta image_url para el post de Instagram")
+            if not page_access_token:
+                raise ValueError("Falta page_access_token para el post de Instagram")
+            if not image_url:
+                raise ValueError("Falta image_url para el post de Instagram")
             result = post_to_instagram(ig_user_id, page_access_token, image_url=image_url, caption=content)
             save_or_update_post(
                 status="published",
@@ -359,12 +361,10 @@ def _invoke_with_retry(fn, *, logger, max_attempts=3, delay=3):
     except ImportError:
         PoolTimeout = type(None)
 
-    last_err = None
     for attempt in range(max_attempts):
         try:
             return fn()
         except (psycopg.OperationalError, psycopg.InterfaceError, PoolTimeout) as db_err:
-            last_err = db_err
             if attempt < max_attempts - 1:
                 logger.warning(
                     "Error de conexion a Postgres en el intento %d/%d, "

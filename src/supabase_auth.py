@@ -1,4 +1,5 @@
 import uuid as _uuid_mod
+from datetime import datetime, timezone, timedelta
 
 from supabase import PostgrestAPIError, create_client, Client
 from typing import Optional
@@ -889,4 +890,88 @@ def get_user_from_supabase_token(jwt: str):
         user_response = auth_sb.auth.get_user(jwt)
         return user_response.user
     except Exception:
+        return None
+
+
+def ensure_valid_linkedin_token(user_id: str) -> Optional[str]:
+    """
+    Verifica y devuelve un access_token de LinkedIn válido para el usuario.
+    Si el token ha expirado o expira en breve (< 5 minutos) y existe un refresh_token,
+    renueva automáticamente la sesión ante la API de LinkedIn, actualiza la base de datos
+    (tanto el nuevo access_token como la URL fresca de la foto de perfil en user_profiles)
+    y devuelve el nuevo token. Si no es renovable o está revocado, devuelve None de forma limpia.
+    """
+    sb = get_supabase_admin()
+    try:
+        resp = (
+            sb.table("user_sessions")
+            .select("*")
+            .eq("user_provider_id", user_id)
+            .eq("provider", "linkedin")
+            .order("last_accessed_at", desc=True)
+            .limit(1)
+            .execute()
+        )
+        if not resp.data:
+            return None
+
+        sess = resp.data[0]
+        access_token = sess.get("access_token")
+        refresh_token = sess.get("refresh_token")
+        expires_at_str = sess.get("expires_at")
+
+        is_expired = False
+        if expires_at_str:
+            try:
+                exp = datetime.fromisoformat(expires_at_str.replace("Z", "+00:00"))
+                if datetime.now(timezone.utc) + timedelta(minutes=5) >= exp:
+                    is_expired = True
+            except Exception:
+                pass
+        elif not access_token:
+            is_expired = True
+
+        if not is_expired and access_token:
+            return access_token
+
+        # Si expiró y disponemos de refresh_token, renovar automáticamente
+        if refresh_token:
+            from src.social_apis import refresh_linkedin_access_token, get_linkedin_user_info
+            token_data = refresh_linkedin_access_token(refresh_token)
+            if token_data and "access_token" in token_data:
+                new_access = token_data["access_token"]
+                new_refresh = token_data.get("refresh_token") or refresh_token
+                expires_in = token_data.get("expires_in", 5184000)
+                new_expires_at = (datetime.now(timezone.utc) + timedelta(seconds=expires_in)).isoformat()
+
+                # Obtener la información del usuario actualizada (incluyendo URL no caducada de foto)
+                fresh_user_info = get_linkedin_user_info(new_access) or {}
+
+                update_payload = {
+                    "access_token": new_access,
+                    "refresh_token": new_refresh,
+                    "expires_at": new_expires_at,
+                    "last_accessed_at": datetime.now(timezone.utc).isoformat(),
+                }
+                if fresh_user_info:
+                    update_payload["user_info"] = fresh_user_info
+
+                sb.table("user_sessions").update(update_payload).eq("session_cookie_id", sess["session_cookie_id"]).execute()
+
+                # Actualizar también user_profiles con la foto de perfil fresca
+                fresh_pic = fresh_user_info.get("picture")
+                if fresh_pic:
+                    try:
+                        sb.table("user_profiles").update({"avatar_url": fresh_pic}).eq("id", user_id).execute()
+                        get_user_profile.clear()
+                    except Exception as pe:
+                        logger.warning("No se pudo actualizar avatar_url en user_profiles: %s", pe)
+
+                logger.info("Sesión de LinkedIn renovada exitosamente para usuario %s.", user_id)
+                return new_access
+
+        logger.info("La sesión de LinkedIn para el usuario %s ha expirado y requiere re-autenticación.", user_id)
+        return None
+    except Exception as e:
+        logger.warning("Error comprobando/renovando token de LinkedIn para %s: %s", user_id, e)
         return None

@@ -1,6 +1,4 @@
-import os
 import yaml
-import logging
 from pathlib import Path
 
 from src.core.logger import logger

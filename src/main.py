@@ -12,11 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from requests_oauthlib import OAuth2Session
 from pydantic import BaseModel
 
-class OnboardingPayload(BaseModel):
-    role: str
-    goals: List[str]
-
-
 # --- Core Imports ---
 from src.core.constants import (
     SECRET_KEY, LI_CLIENT_ID, LI_REDIRECT_URI, BASE_URL, LI_CLIENT_SECRET, LI_SCOPES,
@@ -37,6 +32,10 @@ except ImportError as e:
     logger.warning(f"No se pudieron importar los routers: {e}")
     content_router = None
     ROUTERS_LOADED = False
+
+class OnboardingPayload(BaseModel):
+    role: str
+    goals: List[str]
 
 # --- App Setup ---
 app = FastAPI(title="AIPost API", lifespan=lifespan)
@@ -295,24 +294,34 @@ async def get_current_user_session(
         ).eq("access_token", token).execute()
 
         # Comprobar estado de onboarding en user_profiles
-        from src.supabase_auth import get_user_profile
+        from src.supabase_auth import get_user_profile, ensure_valid_linkedin_token
         has_completed_onboarding = False
         user_provider_id = result.get('user_provider_id')
+        user_info_out = result.get('user_info') if isinstance(result.get('user_info'), dict) else {}
+
         if user_provider_id:
             profile = get_user_profile(user_provider_id)
-            if profile and profile.get("has_completed_onboarding"):
-                has_completed_onboarding = True
-                
-        # Check if linkedin is connected
-        linkedin_connected = False
-        if result.get("provider") == "supabase":
-            li_resp = supabase.table("user_sessions").select("session_cookie_id").eq("user_provider_id", user_provider_id).eq("provider", "linkedin").limit(1).execute()
-            if li_resp.data:
-                linkedin_connected = True
-        elif result.get("provider") == "linkedin":
-            linkedin_connected = True
+            if profile:
+                if profile.get("has_completed_onboarding"):
+                    has_completed_onboarding = True
+                if profile.get("avatar_url") and not user_info_out.get("picture"):
+                    user_info_out["picture"] = profile["avatar_url"]
+                if profile.get("first_name") and not user_info_out.get("first_name"):
+                    user_info_out["first_name"] = profile["first_name"]
+                if profile.get("last_name") and not user_info_out.get("last_name"):
+                    user_info_out["last_name"] = profile["last_name"]
+                if not user_info_out.get("name") and (profile.get("first_name") or profile.get("last_name")):
+                    user_info_out["name"] = f"{profile.get('first_name', '')} {profile.get('last_name', '')}".strip()
 
-        user_info_out = result.get('user_info') if isinstance(result.get('user_info'), dict) else {}
+        # Comprobar si LinkedIn está conectado y activo (o auto-renovarlo si es necesario)
+        linkedin_connected = False
+        if user_provider_id:
+            valid_li_token = ensure_valid_linkedin_token(user_provider_id)
+            linkedin_connected = bool(valid_li_token)
+            if linkedin_connected:
+                updated_prof = get_user_profile(user_provider_id)
+                if updated_prof and updated_prof.get("avatar_url"):
+                    user_info_out["picture"] = updated_prof["avatar_url"]
 
         return {
             "authenticated": True, 
@@ -406,43 +415,22 @@ async def list_user_organizations_endpoint(
     user_id = session.get("user_provider_id")
 
     # Sincronización en vivo de las organizaciones de LinkedIn del usuario.
-    # `get_user_organizations` solo lee la BD; sin este paso una empresa recién
-    # creada en LinkedIn nunca llega a la tabla `organizations` y no aparece en
-    # el selector. Es best-effort: si LinkedIn falla, se devuelven las orgs ya
-    # conocidas en la BD sin romper la carga del dashboard.
-    li_access_token = None
-    if session.get("provider") == "linkedin":
-        li_access_token = session.get("access_token")
-    else:
-        try:
-            li_resp = (
-                supabase.table("user_sessions")
-                .select("access_token")
-                .eq("user_provider_id", user_id)
-                .eq("provider", "linkedin")
-                .order("last_accessed_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if li_resp.data:
-                li_access_token = li_resp.data[0].get("access_token")
-        except Exception as exc:
-            logger.warning("No se pudo resolver el token de LinkedIn para %s: %s", user_id, exc)
+    # Usa ensure_valid_linkedin_token para garantizar un token vigente (auto-renovado si expiró).
+    from src.supabase_auth import ensure_valid_linkedin_token, sync_linkedin_orgs_to_db, get_user_organizations
+    li_access_token = ensure_valid_linkedin_token(user_id)
 
     if li_access_token:
         try:
             from src.social_apis import get_linkedin_administered_orgs
-            from src.supabase_auth import sync_linkedin_orgs_to_db
             managed_orgs = get_linkedin_administered_orgs(li_access_token)
             if managed_orgs:
                 sync_linkedin_orgs_to_db(user_id, managed_orgs)
         except Exception as sync_exc:
             logger.warning(
-                "Sincronización de organizaciones de LinkedIn fallida para %s: %s",
+                "Sincronización de organizaciones de LinkedIn omitida para %s: %s",
                 user_id, sync_exc,
             )
 
-    from src.supabase_auth import get_user_organizations
     orgs = get_user_organizations(user_id)
 
     # Foto de la sesión como FALLBACK para entradas personales: nunca pisa la

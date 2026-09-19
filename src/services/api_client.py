@@ -577,8 +577,8 @@ def get_all_skills(org_urn: str) -> List[Dict[str, Any]]:
         skills = result.data or []
         
         # Check if Base Skill exists
-        base_name = "Guía de Estilo y Generación (Base)"
-        base_skill = next((s for s in skills if s.get("name") == base_name), None)
+        base_names = ("Guía de Estilo y Generación (Base)", "Guía de Estilo y Generación")
+        base_skill = next((s for s in skills if s.get("name") in base_names), None)
         
         if not base_skill and org_urn and not org_urn.startswith("urn:li:person:"):
             # Create default Base Skill

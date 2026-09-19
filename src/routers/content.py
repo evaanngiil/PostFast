@@ -1087,7 +1087,7 @@ async def upload_company_pdf_endpoint(
             "org_urn": org_urn
         }
         
-        result = index_document(
+        index_document(
             org_urn=org_urn,
             source_type="pdf_document",
             source_id=file.filename,
@@ -1198,7 +1198,7 @@ async def delete_company_document_endpoint(org_urn: str, filename: str, session_
     try:
         from src.services.supabase_client import get_supabase_admin
         supabase = get_supabase_admin()
-        result = supabase.table("company_knowledge").delete().eq("org_urn", org_urn).eq("source_type", "pdf_document").eq("source_id", filename).execute()
+        supabase.table("company_knowledge").delete().eq("org_urn", org_urn).eq("source_type", "pdf_document").eq("source_id", filename).execute()
         # Also clean up chunks if there were any
         supabase.table("company_knowledge").delete().eq("org_urn", org_urn).eq("source_type", "pdf_document").like("source_id", f"{filename}#chunk_%").execute()
 

@@ -7,10 +7,10 @@ Implementa una capa de retries para garantizar robustez en las peticiones de red
 import requests
 import re
 from src.core.logger import logger
-from src.core.constants import  LI_API_URL, LI_API_URL_REST
+from src.core.constants import LI_API_URL, LI_API_URL_REST, LI_CLIENT_ID, LI_CLIENT_SECRET
 import time
 import json
-from urllib.parse import quote # Necesario para URNs
+from urllib.parse import quote  # Necesario para URNs
 
 def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
     """
@@ -41,10 +41,11 @@ def fetch_with_retry_log(api_call_func, func_name, max_retries=3, delay=5):
                  logger.error(f"API call {func_name} failed due to rate limiting (429). Daily quota likely exceeded. No retrying.")
                  raise e # Re-lanzar la excepción para que sea manejada por la función que llama.
             if e.response.status_code >= 500:
-                if attempt + 1 == max_retries: 
-                    logger.error(f"API call {func_name} failed after {max_retries} retries.") 
+                if attempt + 1 == max_retries:
+                    logger.error(f"API call {func_name} failed after {max_retries} retries.")
                     raise
-                logger.info(f"Retrying {func_name} in {delay} seconds..."); time.sleep(delay)
+                logger.info(f"Retrying {func_name} in {delay} seconds...")
+                time.sleep(delay)
             else: 
                 logger.error(f"API call {func_name} failed with client error: {e.response.status_code}. No retrying.") 
                 raise e
@@ -88,8 +89,43 @@ def post_to_instagram(ig_user_id, page_access_token, image_url=None, video_url=N
      :return: None.
      """
      logger.warning("post_to_instagram is a placeholder and not fully implemented/used.")
-     return None 
-    
+     return None
+
+
+def refresh_linkedin_access_token(refresh_token: str) -> dict | None:
+    """
+    Intercambia un refresh_token de LinkedIn por un nuevo par access_token / refresh_token.
+    Docs: https://learn.microsoft.com/en-us/linkedin/shared/authentication/programmatic-refresh-tokens
+    """
+    if not refresh_token or not LI_CLIENT_ID or not LI_CLIENT_SECRET:
+        logger.warning("No se puede refrescar token de LinkedIn: faltan credenciales o refresh_token.")
+        return None
+
+    url = "https://www.linkedin.com/oauth/v2/accessToken"
+    payload = {
+        "grant_type": "refresh_token",
+        "refresh_token": refresh_token,
+        "client_id": LI_CLIENT_ID,
+        "client_secret": LI_CLIENT_SECRET,
+    }
+    headers = {"Content-Type": "application/x-www-form-urlencoded"}
+
+    try:
+        resp = requests.post(url, data=payload, headers=headers, timeout=20)
+        if resp.status_code == 200:
+            data = resp.json()
+            logger.info("Token de LinkedIn renovado exitosamente vía API.")
+            return data
+        logger.warning(
+            "Fallo al refrescar token de LinkedIn (HTTP %d): %s",
+            resp.status_code, resp.text[:200]
+        )
+        return None
+    except Exception as exc:
+        logger.warning("Excepción al contactar con el endpoint de refresh de LinkedIn: %s", exc)
+        return None
+
+
 def get_linkedin_user_info(access_token):
     """
     Obtiene la información del usuario de LinkedIn usando los endpoints /userinfo (OIDC) y /me (legacy).
@@ -404,9 +440,10 @@ def get_linkedin_asset_url(asset_urn, access_token):
                      url_identifier = next((ident for ident in identifiers if ident.get('identifierType') == 'DOWNLOAD_URL'), None)
                      if url_identifier:
                          download_url = url_identifier.get('identifier')
-                     else: # Fallback: tomar la primera URL que se encuentre
+                     else:  # Fallback: tomar la primera URL que se encuentre
                          url_identifier = next((ident for ident in identifiers if 'identifier' in ident), None)
-                         if url_identifier: download_url = url_identifier.get('identifier')
+                         if url_identifier:
+                             download_url = url_identifier.get('identifier')
 
                  except (IndexError, KeyError, TypeError) as e:
                      logger.warning(f"Could not extract download URL from 'elements' structure for {asset_urn}: {e}")
@@ -425,20 +462,11 @@ def get_linkedin_asset_url(asset_urn, access_token):
              logger.error(f"Invalid data type ({type(asset_data)}) or no data received for asset details {asset_urn}")
              return None
 
-    except Exception as e:
+    except Exception:
          logger.exception(f"Unexpected error retrieving asset URL for {asset_urn}")
          return None
 
 
-def get_linkedin_organization_details(org_urn, access_token):
-    """
-    Obtiene los detalles (nombre, logo, etc.) de una organización de LinkedIn a partir de su URN.
-    Extrae el ID numérico, llama a la API e intenta resolver el URN del logo a una URL.
-
-    :param org_urn: URN de la organización (ej. 'urn:li:organization:12345').
-    :param access_token: Token OAuth de LinkedIn del usuario.
-    :return: Diccionario con los detalles de la organización o None si ocurre un error.
-    """
 def extract_localized_text(locale_obj) -> str:
     if not locale_obj:
         return ""
@@ -462,7 +490,8 @@ def extract_localized_text(locale_obj) -> str:
                         return v
             # Fallback to the first value in localized
             for v in localized.values():
-                if v: return v
+                if v:
+                    return v
         # 2. Try raw values in dict
         for v in locale_obj.values():
             if isinstance(v, str):
@@ -489,7 +518,8 @@ def extract_specialties(details) -> list[str]:
                 parsed.append(s)
             elif isinstance(s, dict):
                 val = extract_localized_text(s)
-                if val: parsed.append(val)
+                if val:
+                    parsed.append(val)
         if parsed:
             return parsed
     return []
@@ -588,7 +618,7 @@ def get_linkedin_organization_details(org_urn, access_token):
         else:
              logger.error(f"Invalid data type ({type(details)}) or no data received for org details ID {numeric_org_id} (URN: {org_urn})")
              return None
-    except Exception as e:
+    except Exception:
          logger.exception(f"Unexpected exception while processing details for Org ID {numeric_org_id} (URN: {org_urn}).")
          return None
 
@@ -808,9 +838,7 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
     :return: Diccionario con el 'id' (URN) de la publicación creada.
     :raises HTTPError: Si la petición a LinkedIn falla.
     """
-    is_organization_post = False
     if target_entity_urn and isinstance(target_entity_urn, str) and target_entity_urn.startswith("urn:li:organization:"):
-        is_organization_post = True
         # Seteamos el URN directamente como autor si es una publicación de organización
         author_urn = target_entity_urn
         logger.info(f"Preparing post to LinkedIn Organization: {target_entity_urn}")
@@ -895,7 +923,7 @@ def post_to_linkedin_organization(target_entity_urn, access_token, text_content,
         error_str = e.response.text[:300] if e.response else str(e)
         logger.error(f"HTTPError posting to LinkedIn ({target_entity_urn}): {e.response.status_code} - {error_str}")
         raise
-    except Exception as e:
+    except Exception:
         logger.exception(f"Exception during LinkedIn post processing for {target_entity_urn}")
         raise
 
