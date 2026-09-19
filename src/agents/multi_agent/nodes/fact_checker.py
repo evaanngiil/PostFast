@@ -12,12 +12,13 @@ Si un claim no está respaldado por evidencia, el supervisor devuelve el control
 al Content Writer con las correcciones propuestas (bucle de auto-corrección).
 """
 from typing import Dict, Any, List
+import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from src.agents.multi_agent.state import AgentState
-from src.agents.multi_agent.utils import parse_post_text
+from src.agents.multi_agent.utils import parse_post_text, record_node_metric
 from src.services.rag_service import search_knowledge
 from src.agents.multi_agent.tools.profiler_tools import web_search
 from src.core.constants import MEDIUM_LLM, GENAI_API_KEY
@@ -133,6 +134,7 @@ def _safe_landing(draft_content: str, unverified_claims: list, report_dict: dict
         if not new_draft.get("content"):
             raise ValueError("El aterrizaje seguro devolvió un post vacío.")
 
+        report_dict["claims"] = [c for c in report_dict.get("claims", []) if c.get("verified")]
         report_dict["overall_pass"] = True
         report_dict["evaluated"] = True
         report_dict["claims_removed"] = [c.get("claim") for c in unverified_claims]
@@ -195,6 +197,7 @@ def _gather_evidence(claim: ExtractedClaim, org_urn: str, link_url: str | None =
 
 
 def run_fact_checker_node(state: AgentState) -> Dict[str, Any]:
+    t0 = time.time()
     logger.info("=== FACT CHECKER (CRAG): start ===")
 
     task_id = state.get("task_id")
@@ -294,7 +297,16 @@ def run_fact_checker_node(state: AgentState) -> Dict[str, Any]:
         report_dict = report.model_dump() if hasattr(report, "model_dump") else dict(report)
         report_dict["evaluated"] = True
 
+        for c in report_dict.get("claims", []):
+            src = (c.get("source") or "").strip().lower()
+            if not src or "no_source" in src or src in ("none", "null") or not c.get("verified"):
+                c["verified"] = False
+                c["source"] = "no_source_found"
+                if not c.get("correction"):
+                    c["correction"] = "Afirmación no respaldada por la base de conocimientos documental."
+
         unverified_claims = [c for c in report_dict.get("claims", []) if not c.get("verified")]
+        report_dict["overall_pass"] = len(unverified_claims) == 0
 
         if unverified_claims:
             # Presupuesto de reescrituras agotado -> aterrizaje seguro:
@@ -308,25 +320,29 @@ def run_fact_checker_node(state: AgentState) -> Dict[str, Any]:
                 "❌ FACT CHECKER: %d claims dudosos o alucinados de %d analizados.",
                 len(unverified_claims), len(report_dict.get("claims", [])),
             )
-            return {"fact_check_report": report_dict, "correction_loops": loops + 1}
+            return {
+                "fact_check_report": report_dict,
+                "node_metrics": record_node_metric(state.get("node_metrics"), "fact_checker", time.time() - t0),
+            }
 
         report_dict["overall_pass"] = True
         logger.info(
             "✅ FACT CHECKER: aprobado (%d claims verificados contra evidencia).",
             len(report_dict.get("claims", [])),
         )
-        return {"fact_check_report": report_dict}
+        return {
+            "fact_check_report": report_dict,
+            "node_metrics": record_node_metric(state.get("node_metrics"), "fact_checker", time.time() - t0),
+        }
 
     except Exception as e:
         logger.error(f"Fallo en la ejecución del Fact Checker: {e}")
-        # Fail-open documentado: ante error técnico del servicio LLM no se congela
-        # la cola, pero el reporte queda marcado como NO evaluado para que la UI
-        # pueda distinguir 'aprobado' de 'no verificado'.
         return {
             "fact_check_report": {
                 "claims": [],
                 "overall_pass": True,
                 "evaluated": False,
                 "summary": f"Verificación de hechos omitida por error técnico: {e}",
-            }
+            },
+            "node_metrics": record_node_metric(state.get("node_metrics"), "fact_checker", time.time() - t0),
         }

@@ -82,3 +82,13 @@ def parse_post_text(raw: str) -> dict:
         "hashtags": hashtags,
         "call_to_action": call_to_action,
     }
+
+
+def record_node_metric(current_metrics: dict | None, node_name: str, duration_sec: float) -> dict:
+    from datetime import datetime, timezone
+    metrics = dict(current_metrics or {})
+    metrics[node_name] = {
+        "duration_sec": round(duration_sec, 3),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    return metrics

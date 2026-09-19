@@ -6,11 +6,13 @@ prohibidos o menciones dañinas a competidores.
 """
 from typing import Dict, Any, List
 import json
+import time
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from pydantic import BaseModel, Field
 
 from src.agents.multi_agent.state import AgentState
+from src.agents.multi_agent.utils import record_node_metric
 from src.services.rag_service import search_knowledge
 from src.core.constants import MEDIUM_LLM, GENAI_API_KEY
 from src.core.logger import logger
@@ -57,6 +59,7 @@ Analiza el borrador del post y genera el reporte de seguridad en el formato JSON
 """
 
 def run_safety_guard_node(state: AgentState) -> Dict[str, Any]:
+    t0 = time.time()
     logger.info("=== SAFETY GUARD: start ===")
 
     task_id = state.get("task_id")
@@ -158,15 +161,19 @@ def run_safety_guard_node(state: AgentState) -> Dict[str, Any]:
                 "❌ SAFETY GUARD detectó problemas. Severidad: %s. Fallos: %s",
                 report_dict.get("severity"), report_dict.get("issues"),
             )
-            return {"safety_report": report_dict, "correction_loops": loops + 1}
+            return {
+                "safety_report": report_dict,
+                "node_metrics": record_node_metric(state.get("node_metrics"), "safety_guard", time.time() - t0),
+            }
         else:
             logger.info("✅ SAFETY GUARD aprobado. El post cumple todas las políticas de marca.")
-            return {"safety_report": report_dict}
+            return {
+                "safety_report": report_dict,
+                "node_metrics": record_node_metric(state.get("node_metrics"), "safety_guard", time.time() - t0),
+            }
 
     except Exception as e:
         logger.error(f"Fallo en la ejecución de Safety Guard: {e}")
-        # Fail-open documentado: no bloquea el grafo, pero se marca como NO evaluado
-        # para que la UI distinga 'aprobado' de 'no auditado'.
         return {
             "safety_report": {
                 "approved": True,
@@ -174,5 +181,6 @@ def run_safety_guard_node(state: AgentState) -> Dict[str, Any]:
                 "issues": [],
                 "severity": "none",
                 "suggestions": [f"Revisión omitida por error técnico: {e}"]
-            }
+            },
+            "node_metrics": record_node_metric(state.get("node_metrics"), "safety_guard", time.time() - t0),
         }

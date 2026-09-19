@@ -13,12 +13,13 @@ la calidad de la prosa: formato, saltos de línea, hashtags integrados) y se
 estructura con un parseo determinista, sin llamadas LLM adicionales.
 """
 import json
+import time
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field
 
 from src.agents.multi_agent.state import AgentState, DraftPost
-from src.agents.multi_agent.utils import slim_company_profile, parse_post_text
+from src.agents.multi_agent.utils import slim_company_profile, parse_post_text, record_node_metric
 from src.core.constants import SMART_LLM, GENAI_API_KEY
 from src.agents.multi_agent.tools.profiler_tools import web_search
 from src.agents.multi_agent.tools.rag_tools import search_company_knowledge
@@ -132,6 +133,7 @@ def _run_research_loop(idea, org_urn: str, task_id) -> list:
 
 
 def run_content_writer_node(state: AgentState) -> dict:
+    t0 = time.time()
     logger.info("--- ✍️ EJECUTANDO ESCRITOR DE CONTENIDO ---")
 
     task_id = state.get("task_id")
@@ -183,7 +185,7 @@ def run_content_writer_node(state: AgentState) -> dict:
     # Cargar Habilidad Base y Habilidad seleccionada
     from src.services.api_client import get_all_skills
     all_skills = get_all_skills(org_urn)
-    base_skill = next((s for s in all_skills if s.get("name") == "Guía de Estilo y Generación (Base)"), None)
+    base_skill = next((s for s in all_skills if s.get("name") in ("Guía de Estilo y Generación (Base)", "Guía de Estilo y Generación")), None)
 
     selected_skills = state.get("selected_skills") or []
     selected_skill = state.get("selected_skill")
@@ -521,4 +523,5 @@ def run_content_writer_node(state: AgentState) -> dict:
         "user_feedback": None,
         "fact_check_report": None,
         "safety_report": None,
+        "node_metrics": record_node_metric(state.get("node_metrics"), "content_writer", time.time() - t0),
     }

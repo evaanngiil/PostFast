@@ -1,4 +1,10 @@
-from typing import TypedDict, List, Optional, Dict, Any
+from typing import TypedDict, List, Optional, Dict, Any, Annotated
+
+def merge_node_metrics(existing: Optional[Dict[str, Any]], updates: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = dict(existing or {})
+    if updates:
+        merged.update(updates)
+    return merged
 
 class PostIdea(TypedDict):
     topic: str
@@ -80,16 +86,12 @@ class AgentState(TypedDict):
     selected_skill: Optional[Dict[str, Any]]       # Habilidad seleccionada para redacción
     selected_skills: Optional[List[Dict[str, Any]]] # Lista de habilidades seleccionadas
     
-    # NUEVOS — Control de Bucles Infinitos
-    correction_loops: Optional[int]                # Contador de reintentos por seguridad o factualidad
+    correction_loops: Optional[int]
     
     # NUEVOS — Modo Edición Rápida (protocolo estructurado)
     edit_mode: Optional[bool]                      # Flag para indicar si es una edición rápida de post
     original_post: Optional[str]                   # Texto original del post a editar (modo edición)
     edit_instructions: Optional[str]               # Instrucciones de mejora del usuario (modo edición)
 
-    # NUEVOS — Evaluación / Ablación
-    # Nombres de capacidades desactivadas para estudios de ablación del TFG:
-    # 'trend_researcher', 'duplicate_detector', 'fact_checker', 'safety_guard',
-    # 'engagement_analyzer', 'persona_analyst', 'research_loop'.
     ablation_disabled: Optional[List[str]]
+    node_metrics: Annotated[Optional[Dict[str, Any]], merge_node_metrics]

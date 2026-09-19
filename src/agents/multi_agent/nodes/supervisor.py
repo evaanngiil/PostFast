@@ -89,26 +89,32 @@ def supervisor_router_logic(state: AgentState) -> Union[str, List[str]]:
         logger.info("-> content_writer (borrador de post pendiente)")
         return "content_writer"
 
-    # ===== FASE 5: VALIDACIÓN Y COMPLIANCE =====
-    if not state.get("fact_check_report") and not _is_disabled(state, "fact_checker"):
+    fact_pending = not state.get("fact_check_report") and not _is_disabled(state, "fact_checker")
+    safety_pending = not state.get("safety_report") and not _is_disabled(state, "safety_guard")
+
+    if fact_pending and safety_pending:
+        logger.info("-> fact_checker & safety_guard (ejecutando validación en paralelo)")
+        return ["fact_checker", "safety_guard"]
+    elif fact_pending:
         logger.info("-> fact_checker (verificación factual de claims pendiente)")
         return "fact_checker"
-
-    # Bucle de re-ciclo por fallo factual
-    fact_report = state.get("fact_check_report") or {}
-    if fact_report and not fact_report.get("overall_pass"):
-        logger.info("❌ FACT CHECK FALLIDO -> Redirigiendo a content_writer para correcciones")
-        return "content_writer"
-
-    if not state.get("safety_report") and not _is_disabled(state, "safety_guard"):
+    elif safety_pending:
         logger.info("-> safety_guard (auditoría de marca y compliance pendiente)")
         return "safety_guard"
 
-    # Bucle de re-ciclo por fallo en seguridad o políticas
+    fact_report = state.get("fact_check_report") or {}
+    fact_failed = bool(fact_report and not fact_report.get("overall_pass"))
+
     safety_report = state.get("safety_report") or {}
-    if safety_report and not safety_report.get("approved") and safety_report.get("severity") in ("medium", "high", "critical"):
-        logger.info("❌ SAFETY GUARD FALLIDO -> Redirigiendo a content_writer para correcciones")
-        return "content_writer"
+    safety_failed = bool(
+        safety_report
+        and not safety_report.get("approved")
+        and safety_report.get("severity") in ("medium", "high", "critical")
+    )
+
+    if fact_failed or safety_failed:
+        logger.info("❌ VALIDACIÓN FALLIDA -> Redirigiendo a content_editor para corrección")
+        return "content_editor"
 
     # ===== FASE FINAL: REVISIÓN HUMANA =====
     logger.info("-> human_review (borrador validado e impecable)")
