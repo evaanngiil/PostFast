@@ -61,9 +61,9 @@ export default function EditPostModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-[#383132] text-white">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-2xl w-full max-w-3xl overflow-hidden border border-slate-200 flex flex-col max-h-[90dvh]">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-200 bg-[#383132] text-white">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-[#2B8385]/30 border border-[#2B8385]/50 flex items-center justify-center text-[#45B6B8]">
               <Edit3 className="h-4 w-4" />
@@ -83,7 +83,7 @@ export default function EditPostModal({
           </button>
         </div>
 
-        <div className="p-6 flex flex-col gap-5 overflow-y-auto bg-slate-50/50 flex-1">
+        <div className="p-4 sm:p-6 flex flex-col gap-4 sm:gap-5 overflow-y-auto bg-slate-50/50 flex-1 custom-scroll">
           <div className="flex items-center justify-between bg-white px-4 py-2.5 rounded-lg border border-slate-200 shadow-2xs">
             <div className="flex items-center gap-2">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">

@@ -129,9 +129,9 @@ export default function KnowledgeBaseView({
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+    <div className="w-full max-w-[116rem] 2xl:max-w-[124rem] 3xl:max-w-[136rem] mx-auto px-3 sm:px-5 lg:px-6 xl:px-8 2xl:px-12 py-4 sm:py-6 2xl:py-8 flex flex-col gap-5 sm:gap-6 2xl:gap-8">
       <div className="bg-white rounded-xl border border-slate-300/80 shadow-xs overflow-hidden">
-        <div className="px-6 py-3.5 border-b border-[#473E3F] bg-[#383132] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="px-4 sm:px-6 py-3.5 border-b border-[#473E3F] bg-[#383132] text-white flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-[#2B8385]/20 border border-[#2B8385]/40 flex items-center justify-center text-[#3FA5A7] shadow-2xs">
               <Building className="h-4 w-4" />
@@ -177,7 +177,7 @@ export default function KnowledgeBaseView({
         </div>
 
         {/* Contenido del perfil de empresa: Descripción (About Us) y Especialidades con fondo cálido */}
-        <div className="p-6 bg-[#FAF9F8] grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <div className="p-4 sm:p-6 bg-[#FAF9F8] grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6">
           {/* Descripción corporativa (8 columnas) */}
           <div className="lg:col-span-8 flex flex-col gap-2.5">
             <div className="flex items-center justify-between">
@@ -194,9 +194,9 @@ export default function KnowledgeBaseView({
             <textarea
               value={localAboutUs}
               onChange={(e) => setLocalAboutUs(e.target.value)}
-              rows={6}
+              rows={5}
               placeholder="Describe aquí la actividad de la organización, sectores donde opera, propuesta de valor, misión y visión estratégica..."
-              className="w-full text-xs p-3.5 rounded-lg border border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2B8385] focus:border-[#2B8385] resize-y leading-relaxed shadow-2xs"
+              className="w-full text-xs p-3.5 rounded-lg border border-slate-300 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-[#2B8385] focus:border-[#2B8385] resize-y min-h-[90px] max-h-56 leading-relaxed shadow-2xs"
             />
             <div className="flex items-center justify-between text-[11px] text-slate-500">
               <span>Al pulsar "Guardar información", este texto se indexa como vector prioritario en la base de conocimiento</span>
@@ -219,7 +219,7 @@ export default function KnowledgeBaseView({
             </p>
 
             {/* Chips de especialidades */}
-            <div className="flex flex-wrap gap-1.5 min-h-[85px] max-h-[145px] overflow-y-auto p-2.5 bg-[#EDE9E8] rounded-lg border border-[#DDD7D6] content-start">
+            <div className="flex flex-wrap gap-1.5 min-h-[75px] max-h-[145px] overflow-y-auto custom-scroll p-2.5 bg-[#EDE9E8] rounded-lg border border-[#DDD7D6] content-start">
               {localSpecialties.length === 0 ? (
                 <span className="text-xs text-slate-500 italic py-2 px-1">
                   Sin especialidades registradas. Añade pilares como "Banca digital", "Sostenibilidad", "Ciberseguridad", etc.
@@ -316,10 +316,10 @@ export default function KnowledgeBaseView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
         {/* Columna izquierda: Directivas de estilo y voz de marca (5 columnas) */}
         <div className="lg:col-span-5 flex flex-col gap-5">
-          <div className="bg-white rounded-xl border border-slate-300/80 p-5 shadow-xs flex flex-col gap-5">
+          <div className="bg-white rounded-xl border border-slate-300/80 p-4 sm:p-5 shadow-xs flex flex-col gap-4 sm:gap-5">
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-[#F4EFEF] text-[#473E3F] border border-[#E0D7D7] flex items-center justify-center">
@@ -348,7 +348,7 @@ export default function KnowledgeBaseView({
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+              <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1 custom-scroll">
                 {localDos.length === 0 ? (
                   <div className="p-3 bg-[#F4F6F8] rounded-lg border border-slate-200 text-xs text-slate-400 italic text-center">
                     No hay pautas registradas. Añade directivas de estilo positivas.
@@ -420,7 +420,7 @@ export default function KnowledgeBaseView({
                 </span>
               </div>
 
-              <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1">
+              <div className="flex flex-col gap-1.5 max-h-56 overflow-y-auto pr-1 custom-scroll">
                 {localDonts.length === 0 ? (
                   <div className="p-3 bg-[#F4F6F8] rounded-lg border border-slate-200 text-xs text-slate-400 italic text-center">
                     No hay restricciones registradas. Añade límites o elementos prohibidos.
@@ -541,8 +541,8 @@ export default function KnowledgeBaseView({
             </label>
 
             {/* Tabla de documentos */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
+            <div className="overflow-x-auto rounded-lg border border-slate-200 custom-scroll">
+              <table className="w-full text-left text-xs text-slate-700 min-w-[540px]">
                 <thead className="bg-[#ECEEF0] text-[10px] font-bold uppercase tracking-wider text-[#383132] border-b border-slate-200">
                   <tr>
                     <th className="py-2.5 px-3">Documento</th>
@@ -657,7 +657,7 @@ export default function KnowledgeBaseView({
             </div>
 
             {/* Lista de URLs */}
-            <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
+            <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scroll pr-1">
               {ragUrls.length === 0 ? (
                 <span className="text-xs text-slate-400 italic py-3 text-center">
                   No hay enlaces web registrados en esta organización.

@@ -66,9 +66,9 @@ export default function SkillsView({
   };
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <div className="lg:col-span-8 bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col gap-5">
+    <div className="w-full max-w-[116rem] 2xl:max-w-[124rem] 3xl:max-w-[136rem] mx-auto px-3 sm:px-5 lg:px-6 xl:px-8 2xl:px-12 py-4 sm:py-6 2xl:py-8 flex flex-col gap-5 sm:gap-6 2xl:gap-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 sm:gap-6 items-start">
+        <div className="lg:col-span-7 xl:col-span-8 bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col gap-4 sm:gap-5">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <FileCode className="h-4 w-4 text-brand-teal" />
@@ -113,9 +113,9 @@ export default function SkillsView({
               <textarea
                 value={workspaceSkillMarkdown}
                 onChange={(e) => setWorkspaceSkillMarkdown(e.target.value)}
-                rows={12}
+                rows={10}
                 placeholder="Escribe aquí las directrices para el redactor, ejemplos de ganchos de apertura (hooks), formato de listas y tono..."
-                className="text-xs p-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-teal font-mono leading-relaxed resize-y"
+                className="text-xs p-3.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-1 focus:ring-brand-teal font-mono leading-relaxed resize-y min-h-[180px] sm:min-h-[260px] lg:min-h-[340px]"
               />
             </div>
 
@@ -160,8 +160,8 @@ export default function SkillsView({
           </div>
         </div>
 
-        {/* Right Column: Skills List (4 cols) */}
-        <div className="lg:col-span-4 bg-white rounded-xl border border-slate-300/80 p-5 shadow-xs flex flex-col gap-4">
+        {/* Right Column: Skills List (4-5 cols) */}
+        <div className="lg:col-span-5 xl:col-span-4 bg-white rounded-xl border border-slate-300/80 p-4 sm:p-5 shadow-xs flex flex-col gap-4 lg:sticky lg:top-20 lg:max-h-[calc(100dvh-5.5rem)] lg:overflow-y-auto custom-scroll">
           <div className="flex items-center justify-between pb-3 border-b border-slate-200">
             <div className="flex items-center gap-2">
               <Layers className="h-4 w-4 text-[#2B8385]" />
@@ -171,7 +171,7 @@ export default function SkillsView({
             </div>
             <button
               onClick={handleNewSkillClick}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#2B8385] hover:bg-[#1E6062] text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-[#2B8385] hover:bg-[#1E6062] text-white rounded-lg text-xs font-bold shadow-xs transition-colors cursor-pointer shrink-0"
               title="Crear nueva habilidad"
             >
               <Plus className="h-3.5 w-3.5" />
@@ -179,7 +179,7 @@ export default function SkillsView({
             </button>
           </div>
 
-          <div className="flex flex-col gap-2 max-h-[500px] overflow-y-auto pr-1">
+          <div className="flex flex-col gap-2 max-h-[350px] lg:max-h-[calc(100dvh-14rem)] overflow-y-auto custom-scroll pr-1">
             {skills.map((skill) => {
               const isSelected = activeWorkspaceSkill?.id === skill.id;
               return (

@@ -28,6 +28,54 @@
   --color-brand-charcoal-border: #DDD5D5;
 }
 
+html {
+  scrollbar-gutter: stable;
+  text-rendering: optimizeLegibility;
+  font-size: 14px;
+}
+
+/* Tablets (640px - 1023px) */
+@media (min-width: 640px) {
+  html {
+    font-size: 14.5px;
+  }
+}
+
+/* Portátiles compactos / MacBook Air & Pro 13"-14" (1024px - 1439px) */
+@media (min-width: 1024px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+/* Pantallas estándar de escritorio / Mac 16" / 1080p estándar (1440px - 1799px) */
+@media (min-width: 1440px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+/* Monitores de escritorio amplios / 1080p grande (1800px - 2199px) */
+@media (min-width: 1800px) {
+  html {
+    font-size: 17.5px;
+  }
+}
+
+/* Monitores 2K / QHD de escritorio (2200px - 2799px, ej. 2560x1440 sin reescalado) */
+@media (min-width: 2200px) {
+  html {
+    font-size: 19.5px;
+  }
+}
+
+/* Pantallas 4K / Ultrawide (>= 2800px) */
+@media (min-width: 2800px) {
+  html {
+    font-size: 21.5px;
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -53,4 +101,10 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+.custom-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+  overscroll-behavior: contain;
 }

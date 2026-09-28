@@ -130,7 +130,7 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-10 px-4">
+    <div className="min-h-[100dvh] bg-slate-50 flex flex-col items-center py-6 sm:py-10 px-3 sm:px-4">
       <div className="w-full max-w-[700px]">
         {/* Logo (if applicable) */}
         <div className="flex justify-center mb-6">
@@ -141,13 +141,13 @@ export default function OnboardingPage() {
         </div>
 
         {/* Hero Section */}
-        <div className="bg-gradient-to-br from-brand-teal to-brand-teal-dark rounded-t-3xl rounded-b-lg p-10 text-center mb-8 shadow-md">
-          <h1 className="text-white text-3xl font-bold mb-2">¡Bienvenido, {userName}!</h1>
-          <p className="text-white/90 text-lg">Configura tu perfil para personalizar tu experiencia con IA</p>
+        <div className="bg-gradient-to-br from-brand-teal to-brand-teal-dark rounded-t-3xl rounded-b-lg p-6 sm:p-10 text-center mb-6 sm:mb-8 shadow-md">
+          <h1 className="text-white text-2xl sm:text-3xl font-bold mb-2">¡Bienvenido, {userName}!</h1>
+          <p className="text-white/90 text-sm sm:text-lg">Configura tu perfil para personalizar tu experiencia con IA</p>
         </div>
 
         {/* Form Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 p-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
+        <div className="bg-white rounded-2xl border border-slate-200 p-5 sm:p-8 shadow-[0_4px_16px_rgba(0,0,0,0.06)]">
           <h3 className="text-xl font-bold text-slate-900 mb-1">Sobre ti</h3>
           <p className="text-sm text-slate-500 mb-8">Solo necesitamos unos datos para calibrar tu asistente de contenido.</p>
 

@@ -35,9 +35,9 @@ export default function ViewPostModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-slate-200">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl overflow-hidden border border-slate-200 flex flex-col max-h-[90dvh]">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <FileText className="h-4 w-4 text-brand-teal" />
             <h3 className="font-bold text-slate-800 text-sm">Detalle de la publicación</h3>
@@ -50,7 +50,7 @@ export default function ViewPostModal({
           </button>
         </div>
 
-        <div className="p-6 flex flex-col gap-4 max-h-[75vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 flex flex-col gap-4 max-h-[75dvh] overflow-y-auto custom-scroll">
           <div className="flex items-center justify-between border-b border-slate-100 pb-3">
             <div className="flex flex-col">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">

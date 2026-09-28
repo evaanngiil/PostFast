@@ -170,7 +170,7 @@ export default function LoginPage() {
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col md:flex-row text-slate-800 bg-[#E2EEF2]"
+      className="min-h-[100dvh] w-full flex flex-col md:flex-row text-slate-800 bg-[#E2EEF2]"
       style={{
         backgroundImage: "url('/assets/login_bg_full2.jpg')",
         backgroundSize: "cover",
@@ -180,8 +180,8 @@ export default function LoginPage() {
     >
       <div className="hidden md:flex flex-1 lg:flex-[1.05]" />
 
-      <div className="flex-1 flex justify-center items-center p-4 sm:p-6 md:p-10 backdrop-blur-[1px] md:backdrop-blur-none min-h-screen">
-        <div className="w-full max-w-[430px] bg-white/95 backdrop-blur-md rounded-2xl border border-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.08)] p-7 sm:p-9 my-auto">
+      <div className="flex-1 flex justify-center items-center p-3 sm:p-6 md:p-8 backdrop-blur-[1px] md:backdrop-blur-none min-h-[100dvh] py-6 sm:py-10">
+        <div className="w-full max-w-[430px] bg-white/95 backdrop-blur-md rounded-2xl border border-white/80 shadow-[0_12px_36px_rgba(0,0,0,0.08)] p-5 sm:p-8 my-auto">
           <div className="flex flex-col items-center text-center mb-5">
             <div className="w-14 h-14 rounded-2xl bg-white border border-slate-200/80 flex items-center justify-center p-2 mb-3 shadow-2xs">
               <img src="/logo.png" alt="AIPost Logo" className="w-full h-full object-contain" />

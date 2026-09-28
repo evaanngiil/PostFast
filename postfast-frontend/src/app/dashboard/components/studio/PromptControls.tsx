@@ -84,7 +84,7 @@ export default function PromptControls({
   const isEditMode = Boolean(editingPost);
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs flex flex-col gap-5">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-5 shadow-xs flex flex-col gap-4 sm:gap-5">
       <div className="flex items-center justify-between pb-3 border-b border-slate-100">
         <div className="flex items-center gap-2">
           {isEditMode ? (
@@ -185,7 +185,7 @@ export default function PromptControls({
               disabled={isGenerating}
               rows={4}
               placeholder="Describe el anuncio, reflexión o noticia que deseas comunicar (ej: Lanzamiento del nuevo producto financiero sostenible para pymes)..."
-              className="w-full text-xs p-3 rounded-lg border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-teal focus:border-brand-teal transition-all resize-none leading-relaxed"
+              className="w-full text-xs sm:text-sm 2xl:text-base p-3 2xl:p-4 rounded-xl border border-slate-200 bg-slate-50/50 text-slate-800 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-brand-teal focus:border-brand-teal transition-all resize-y min-h-[110px] xl:min-h-[130px] 2xl:min-h-[160px] max-h-56 2xl:max-h-72 leading-relaxed"
             />
             {promptQuery && (
               <button
@@ -197,10 +197,10 @@ export default function PromptControls({
               </button>
             )}
           </div>
-          <div className="flex items-center justify-between text-[10px] text-slate-400 px-0.5">
+          <div className="flex items-center justify-between text-xs text-slate-400 px-0.5">
             <span>Sé específico para que el motor RAG contraste mejor tus datos</span>
             <div className="flex items-center gap-2">
-              <span className="hidden sm:inline-block font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[9px]">⌘ + Enter</span>
+              <span className="hidden sm:inline-block font-mono bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[0.6875rem] 2xl:text-xs">⌘ + Enter</span>
               <span>{promptQuery.length} caracteres</span>
             </div>
           </div>
@@ -257,7 +257,7 @@ export default function PromptControls({
 
         {/* Active skill chips */}
         {selectedSkillIds.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1.5 pt-1 max-h-24 overflow-y-auto custom-scroll">
             {skills
               .filter((s) => selectedSkillIds.includes(s.id))
               .map((skill) => {
@@ -347,7 +347,7 @@ export default function PromptControls({
             type="button"
             onClick={() => onGenerate()}
             disabled={!promptQuery.trim()}
-            className={`w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all ${
+            className={`w-full flex items-center justify-center gap-2 py-2.5 2xl:py-3.5 rounded-lg 2xl:rounded-xl text-xs sm:text-sm 2xl:text-base font-bold transition-all ${
               !promptQuery.trim()
                 ? "bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none"
                 : "bg-brand-teal hover:bg-brand-teal-dark text-white shadow-xs cursor-pointer"
@@ -355,7 +355,7 @@ export default function PromptControls({
           >
             <span>Redactar publicación</span>
             <kbd
-              className={`hidden sm:inline-block text-[10px] font-mono px-1.5 py-0.5 rounded ${
+              className={`hidden sm:inline-block text-[0.6875rem] 2xl:text-xs font-mono px-1.5 py-0.5 rounded ${
                 !promptQuery.trim()
                   ? "bg-slate-200/80 text-slate-400 border border-slate-300/60"
                   : "bg-white/20 text-white/90"
@@ -363,7 +363,7 @@ export default function PromptControls({
             >
               ⌘ ↵
             </kbd>
-            <ArrowRight className="h-3.5 w-3.5" />
+            <ArrowRight className="h-3.5 w-3.5 2xl:h-4 2xl:w-4" />
           </button>
         )}
       </div>

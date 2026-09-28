@@ -95,23 +95,23 @@ export default function AppHeader({
 
   return (
     <header className="sticky top-0 z-40 bg-[#2E2829] border-b border-[#3E3637] shadow-sm text-white">
-      <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 h-[72px] flex items-center justify-between gap-4">
+      <div className="w-full max-w-[116rem] 2xl:max-w-[124rem] 3xl:max-w-[136rem] mx-auto px-3 sm:px-5 lg:px-8 2xl:px-12 h-14 sm:h-16 lg:h-[68px] 2xl:h-[76px] flex items-center justify-between gap-2 sm:gap-4">
         {/* Left: Brand Logo & Navigation */}
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-3 sm:gap-6 lg:gap-8 min-w-0">
           {/* Logo & Brand Identity */}
-          <div className="flex items-center gap-3.5 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
             <img
               src="/logo.png"
               alt="AIPost Logo"
-              className="h-12 w-12 sm:h-[52px] sm:w-[52px] object-contain select-none transition-transform hover:scale-105 duration-200"
+              className="h-9 w-9 sm:h-10 sm:w-10 lg:h-11 lg:w-11 object-contain select-none transition-transform hover:scale-105 duration-200"
             />
-            <span className="text-xl font-black tracking-[0.18em] text-white select-none leading-none">
+            <span className="text-base sm:text-lg lg:text-xl font-black tracking-[0.14em] sm:tracking-[0.18em] text-white select-none leading-none">
               AIPOST
             </span>
           </div>
 
           {/* Desktop Navigation Tabs */}
-          <nav className="hidden md:flex items-center gap-1.5" aria-label="Navegación principal">
+          <nav className="hidden md:flex items-center gap-1 lg:gap-1.5" aria-label="Navegación principal">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
@@ -119,7 +119,7 @@ export default function AppHeader({
                 <button
                   key={item.id}
                   onClick={() => setActiveTab(item.id)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition-all duration-150 cursor-pointer ${
+                  className={`flex items-center gap-1.5 lg:gap-2 px-2.5 lg:px-3.5 py-1.5 lg:py-2 rounded-lg text-xs lg:text-sm 2xl:text-base font-semibold transition-all duration-150 cursor-pointer ${
                     isActive
                       ? "bg-[#2B8385] text-white shadow-xs font-bold"
                       : "text-slate-300 hover:text-white hover:bg-white/10"
@@ -127,7 +127,7 @@ export default function AppHeader({
                   aria-current={isActive ? "page" : undefined}
                 >
                   <Icon
-                    className={`h-4 w-4 transition-colors ${
+                    className={`h-4 w-4 2xl:h-4.5 2xl:w-4.5 transition-colors ${
                       isActive ? "text-white" : "text-slate-400"
                     }`}
                   />
@@ -139,13 +139,13 @@ export default function AppHeader({
         </div>
 
         {/* Right: Tenant Switcher, LinkedIn Status & User Pill */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Tenant / Organization Switcher */}
           {selectedCompany && (
             <div className="relative" ref={tenantRef}>
               <button
                 onClick={() => setIsTenantOpen(!isTenantOpen)}
-                className="flex items-center gap-2.5 bg-[#3D3536] hover:bg-[#483F40] border border-[#524849] rounded-lg px-2.5 py-1.5 text-left transition-colors cursor-pointer text-white"
+                className="flex items-center gap-2 sm:gap-2.5 2xl:gap-3 bg-[#3D3536] hover:bg-[#483F40] border border-[#524849] rounded-lg 2xl:rounded-xl px-2 sm:px-2.5 2xl:px-3.5 py-1 sm:py-1.5 2xl:py-2 text-left transition-colors cursor-pointer text-white"
                 title="Cambiar organización o cuenta activa"
                 aria-expanded={isTenantOpen}
                 aria-haspopup="true"
@@ -155,23 +155,23 @@ export default function AppHeader({
                     src={selectedCompany.logo_url}
                     alt={selectedCompany.name}
                     onError={() => markImageFailed(selectedCompany.logo_url!)}
-                    className="w-5 h-5 rounded object-cover border border-[#524849] shrink-0"
+                    className="w-5 h-5 sm:w-6 sm:h-6 2xl:w-7 2xl:h-7 rounded object-cover border border-[#524849] shrink-0"
                   />
                 ) : (
-                  <div className="w-5 h-5 bg-[#2B8385] text-white rounded flex items-center justify-center text-[10px] font-bold uppercase shrink-0">
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 2xl:w-7 2xl:h-7 bg-[#2B8385] text-white rounded flex items-center justify-center text-xs 2xl:text-sm font-bold uppercase shrink-0">
                     {selectedCompany.name.slice(0, 2)}
                   </div>
                 )}
                 <div className="flex flex-col">
-                  <span className="text-[11px] font-bold text-white leading-tight max-w-[110px] sm:max-w-[150px] truncate">
+                  <span className="text-xs sm:text-sm 2xl:text-base font-bold text-white leading-tight max-w-[85px] sm:max-w-[130px] md:max-w-[180px] lg:max-w-[220px] 2xl:max-w-[340px] truncate">
                     {selectedCompany.name}
                   </span>
-                  <span className="text-[9px] text-slate-300 font-medium leading-none">
+                  <span className="text-[0.6875rem] 2xl:text-xs text-slate-300 font-medium leading-none hidden sm:inline">
                     {selectedCompany.is_personal ? "Perfil personal" : "Página de empresa"}
                   </span>
                 </div>
                 <ChevronDown
-                  className={`h-3 w-3 text-slate-300 transition-transform duration-150 ${
+                  className={`h-3 w-3 sm:h-3.5 sm:w-3.5 2xl:h-4 2xl:w-4 text-slate-300 transition-transform duration-150 ${
                     isTenantOpen ? "rotate-180" : ""
                   }`}
                 />
@@ -179,60 +179,69 @@ export default function AppHeader({
 
               {/* Tenant Dropdown */}
               {isTenantOpen && (
-                <div className="absolute right-0 top-full mt-1.5 w-72 bg-[#2E2829] rounded-xl border border-[#443C3D] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-white">
-                  <div className="px-3 py-1.5 border-b border-[#3E3637] flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Cuentas vinculadas
-                    </span>
+                <div className="absolute right-0 top-full mt-1.5 2xl:mt-2.5 w-72 sm:w-80 md:w-88 2xl:w-96 max-w-[calc(100vw-1.5rem)] bg-[#2E2829] rounded-xl 2xl:rounded-2xl border border-[#443C3D] shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-white">
+                  <div className="px-3 2xl:px-4 py-2 2xl:py-2.5 border-b border-[#3E3637] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Building2 className="h-3.5 w-3.5 2xl:h-4 2xl:w-4 text-[#3FA5A7]" />
+                      <span className="text-xs 2xl:text-sm font-bold uppercase tracking-wider text-slate-300">
+                        Cuentas vinculadas
+                      </span>
+                    </div>
                     <button
                       onClick={loadCompanies}
-                      className="p-1 text-slate-400 hover:text-white rounded hover:bg-white/10 transition-colors"
+                      className="p-1 2xl:p-1.5 text-slate-400 hover:text-white rounded-md hover:bg-white/10 transition-colors cursor-pointer"
                       title="Actualizar cuentas"
                     >
-                      <RefreshCw className="h-3 w-3" />
+                      <RefreshCw className="h-3 w-3 2xl:h-3.5 2xl:w-3.5" />
                     </button>
                   </div>
-                  <div className="max-h-56 overflow-y-auto py-1">
-                    {companies.map((c) => {
-                      const isCurrent = c.urn === selectedCompany.urn;
-                      return (
-                        <button
-                          key={c.urn}
-                          onClick={() => {
-                            setSelectedCompany(c);
-                            localStorage.setItem("postfast_active_org_urn", c.urn);
-                            setIsTenantOpen(false);
-                          }}
-                          className={`w-full flex items-center justify-between px-3 py-2 hover:bg-[#3D3536] text-left transition-colors cursor-pointer ${
-                            isCurrent ? "bg-[#3D3536]/80 text-[#3FA5A7]" : "text-slate-200"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            {c.logo_url && !failedImages[c.logo_url] ? (
-                              <img
-                                src={c.logo_url}
-                                alt={c.name}
-                                onError={() => markImageFailed(c.logo_url!)}
-                                className="w-5 h-5 rounded object-cover border border-[#524849] shrink-0"
-                              />
-                            ) : (
-                              <div className="w-5 h-5 bg-[#2B8385] text-white rounded flex items-center justify-center text-[9px] font-bold uppercase shrink-0">
-                                {c.name.slice(0, 2)}
+                  <div className="max-h-56 sm:max-h-64 2xl:max-h-80 overflow-y-auto py-1 custom-scroll">
+                    {companies.length === 0 ? (
+                      <div className="px-4 py-6 text-center text-xs 2xl:text-sm text-slate-400">
+                        No hay cuentas vinculadas disponibles.
+                      </div>
+                    ) : (
+                      companies.map((c) => {
+                        const isCurrent = c.urn === selectedCompany.urn;
+                        return (
+                          <button
+                            key={c.urn}
+                            onClick={() => {
+                              setSelectedCompany(c);
+                              localStorage.setItem("postfast_active_org_urn", c.urn);
+                              setIsTenantOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-3 2xl:px-4 py-2 2xl:py-2.5 hover:bg-[#3D3536] text-left transition-colors cursor-pointer ${
+                              isCurrent ? "bg-[#3D3536]/80 text-[#3FA5A7]" : "text-slate-200"
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 2xl:gap-3 min-w-0">
+                              {c.logo_url && !failedImages[c.logo_url] ? (
+                                <img
+                                  src={c.logo_url}
+                                  alt={c.name}
+                                  onError={() => markImageFailed(c.logo_url!)}
+                                  className="w-6 h-6 2xl:w-7 2xl:h-7 rounded object-cover border border-[#524849] shrink-0"
+                                />
+                              ) : (
+                                <div className="w-6 h-6 2xl:w-7 2xl:h-7 bg-[#2B8385] text-white rounded flex items-center justify-center text-xs 2xl:text-sm font-bold uppercase shrink-0">
+                                  {c.name.slice(0, 2)}
+                                </div>
+                              )}
+                              <div className="flex flex-col truncate">
+                                <span className="text-xs sm:text-sm 2xl:text-base font-semibold text-white truncate">
+                                  {c.name}
+                                </span>
+                                <span className="text-[0.6875rem] 2xl:text-xs text-slate-400">
+                                  {c.is_personal ? "Perfil personal" : "Página de empresa"}
+                                </span>
                               </div>
-                            )}
-                            <div className="flex flex-col truncate">
-                              <span className="text-xs font-semibold text-white truncate">
-                                {c.name}
-                              </span>
-                              <span className="text-[9px] text-slate-400">
-                                {c.is_personal ? "Personal" : "Empresa"}
-                              </span>
                             </div>
-                          </div>
-                          {isCurrent && <Check className="h-3.5 w-3.5 text-[#3FA5A7] shrink-0 ml-2" />}
-                        </button>
-                      );
-                    })}
+                            {isCurrent && <Check className="h-4 w-4 2xl:h-5 2xl:w-5 text-[#3FA5A7] shrink-0 ml-2" />}
+                          </button>
+                        );
+                      })
+                    )}
                   </div>
                 </div>
               )}
@@ -266,23 +275,23 @@ export default function AppHeader({
                   src={userInfo.picture}
                   alt={userInfo.name || "Usuario"}
                   onError={() => markImageFailed(userInfo.picture!)}
-                  className="w-7 h-7 rounded-full object-cover border border-[#524849] shrink-0"
+                  className="w-7 h-7 2xl:w-8 2xl:h-8 rounded-full object-cover border border-[#524849] shrink-0"
                 />
               ) : (
-                <div className="w-7 h-7 rounded-full bg-[#3D3536] text-white flex items-center justify-center text-[10px] font-bold shrink-0 uppercase border border-[#524849]">
+                <div className="w-7 h-7 2xl:w-8 2xl:h-8 rounded-full bg-[#3D3536] text-white flex items-center justify-center text-xs font-bold shrink-0 uppercase border border-[#524849]">
                   {(userInfo?.name || userInfo?.email || "U").slice(0, 2)}
                 </div>
               )}
-              <ChevronDown className="h-3 w-3 text-slate-300 hidden sm:block" />
+              <ChevronDown className="h-3 w-3 2xl:h-3.5 2xl:w-3.5 text-slate-300 hidden sm:block" />
             </button>
 
             {isUserMenuOpen && (
-              <div className="absolute right-0 top-full mt-1.5 w-56 bg-[#2E2829] rounded-xl border border-[#443C3D] shadow-xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-white">
-                <div className="px-3 py-2 border-b border-[#3E3637]">
-                  <p className="text-xs font-bold text-white truncate">
+              <div className="absolute right-0 top-full mt-1.5 2xl:mt-2.5 w-60 sm:w-64 2xl:w-72 bg-[#2E2829] rounded-xl 2xl:rounded-2xl border border-[#443C3D] shadow-2xl py-2 z-50 animate-in fade-in slide-in-from-top-1 duration-150 text-white">
+                <div className="px-3.5 2xl:px-4 py-2.5 2xl:py-3 border-b border-[#3E3637]">
+                  <p className="text-xs 2xl:text-sm font-bold text-white truncate">
                     {userInfo?.name || "Usuario"}
                   </p>
-                  <p className="text-[10px] text-slate-400 truncate mt-0.5">
+                  <p className="text-[0.6875rem] 2xl:text-xs text-slate-400 truncate mt-0.5">
                     {userInfo?.email || "Sesión activa"}
                   </p>
                 </div>
@@ -293,9 +302,9 @@ export default function AppHeader({
                       setIsUserMenuOpen(false);
                       handleDisconnectLinkedin();
                     }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-xs text-slate-300 hover:bg-[#3D3536] transition-colors text-left cursor-pointer"
+                    className="w-full flex items-center gap-2 2xl:gap-2.5 px-3.5 2xl:px-4 py-2 2xl:py-2.5 text-xs 2xl:text-sm text-slate-300 hover:bg-[#3D3536] transition-colors text-left cursor-pointer"
                   >
-                    <User className="h-3.5 w-3.5 text-slate-400" />
+                    <User className="h-3.5 w-3.5 2xl:h-4 2xl:w-4 text-slate-400" />
                     <span>Desconectar LinkedIn</span>
                   </button>
                 )}
@@ -305,9 +314,9 @@ export default function AppHeader({
                     setIsUserMenuOpen(false);
                     handleLogout();
                   }}
-                  className="w-full flex items-center gap-2 px-3 py-2 text-xs text-rose-400 hover:bg-rose-950/30 transition-colors text-left cursor-pointer font-medium"
+                  className="w-full flex items-center gap-2 2xl:gap-2.5 px-3.5 2xl:px-4 py-2 2xl:py-2.5 text-xs 2xl:text-sm text-rose-400 hover:bg-rose-950/30 transition-colors text-left cursor-pointer font-medium"
                 >
-                  <LogOut className="h-3.5 w-3.5 text-rose-400" />
+                  <LogOut className="h-3.5 w-3.5 2xl:h-4 2xl:w-4 text-rose-400" />
                   <span>Cerrar sesión</span>
                 </button>
               </div>

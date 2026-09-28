@@ -10,8 +10,8 @@ interface ScheduleModalProps {
 /** Modal para elegir fecha/hora de publicación programada en LinkedIn. */
 export default function ScheduleModal({ scheduleDate, onChange, onConfirm, onClose }: ScheduleModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-3 sm:p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100 max-h-[90dvh] overflow-y-auto custom-scroll">
         <div className="flex items-center justify-between p-4 border-b border-slate-100">
           <h3 className="font-bold text-slate-800 flex items-center gap-2">
             <Calendar className="h-5 w-5 text-brand-teal" />

@@ -69,8 +69,8 @@ export default function HistoryView({
   const countDrafts = postsHistory.filter((p) => p.status === "draft" || p.status === "saved_for_later").length;
 
   return (
-    <div className="w-full max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div className="w-full max-w-[116rem] 2xl:max-w-[124rem] 3xl:max-w-[136rem] mx-auto px-3 sm:px-5 lg:px-6 xl:px-8 2xl:px-12 py-4 sm:py-6 2xl:py-8 flex flex-col gap-5 sm:gap-6 2xl:gap-8">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <div className="bg-white rounded-xl border border-slate-200 border-l-4 border-l-[#473E3F] p-4 shadow-xs">
           <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total publicaciones</span>
           <p className="text-xl font-extrabold text-[#383132] mt-1">{postsHistory.length}</p>
@@ -147,7 +147,7 @@ export default function HistoryView({
           <span className="text-xs font-medium">No se encontraron publicaciones con el filtro seleccionado.</span>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-4 sm:gap-5">
           {filteredPosts.map((post) => {
             const orgName =
               companies.find((c) => c.urn === post.account_id)?.name || post.account_id || "LinkedIn";

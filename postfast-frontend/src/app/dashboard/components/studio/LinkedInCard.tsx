@@ -136,7 +136,7 @@ export default function LinkedInCard({
       </div>
 
       {/* Feed Canvas Viewport Wrapper */}
-      <div className="bg-[#E4E7EB] p-3 sm:p-5 rounded-xl border border-slate-300/90 shadow-inner">
+      <div className="bg-[#E4E7EB] p-3 sm:p-5 2xl:p-7 rounded-xl border border-slate-300/90 shadow-inner">
         {/* LinkedIn Post Card Container */}
         <article
           className={`bg-white rounded-xl border border-slate-300/80 shadow-[0_2px_12px_rgba(0,0,0,0.06)] overflow-hidden transition-all duration-200 ${
@@ -152,13 +152,13 @@ export default function LinkedInCard({
                 src={authorAvatar}
                 alt={authorName}
                 onError={() => setAvatarError(true)}
-                className={`w-11 h-11 object-cover border border-slate-200 shrink-0 ${
+                className={`w-11 h-11 2xl:w-12 2xl:h-12 object-cover border border-slate-200 shrink-0 ${
                   isPersonal ? "rounded-full" : "rounded-lg"
                 }`}
               />
             ) : (
               <div
-                className={`w-11 h-11 bg-brand-charcoal text-white font-bold flex items-center justify-center text-sm uppercase shrink-0 ${
+                className={`w-11 h-11 2xl:w-12 2xl:h-12 bg-brand-charcoal text-white font-bold flex items-center justify-center text-sm uppercase shrink-0 ${
                   isPersonal ? "rounded-full" : "rounded-lg"
                 }`}
               >
@@ -167,15 +167,15 @@ export default function LinkedInCard({
             )}
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold text-slate-900 truncate hover:text-[#0A66C2] transition-colors cursor-pointer">
+                <span className="text-sm 2xl:text-base font-bold text-slate-900 truncate hover:text-[#0A66C2] transition-colors cursor-pointer">
                   {authorName}
                 </span>
                 <span className="text-xs text-slate-400 font-normal">• 1.º</span>
               </div>
-              <span className="text-[11px] text-slate-500 leading-tight truncate">
+              <span className="text-xs 2xl:text-sm text-slate-500 leading-tight truncate">
                 {authorSubtitle}
               </span>
-              <div className="flex items-center gap-1 text-[11px] text-slate-400 mt-0.5">
+              <div className="flex items-center gap-1 text-[0.6875rem] 2xl:text-xs text-slate-400 mt-0.5">
                 <span>Ahora</span>
                 <span>•</span>
                 <Globe className="h-3 w-3 text-slate-400" />
@@ -201,12 +201,12 @@ export default function LinkedInCard({
         </div>
 
         {/* Card Body: Text Content */}
-        <div className="px-4 pb-3 text-[13.5px] leading-[1.55] text-slate-800 whitespace-pre-line font-normal break-words">
+        <div className="px-4 pb-3 text-sm 2xl:text-base leading-[1.55] text-slate-800 whitespace-pre-line font-normal break-words">
           {displayedContent}
           {needsTruncation && (
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="text-slate-500 hover:text-[#0A66C2] font-semibold text-xs ml-1 cursor-pointer focus-visible:outline-none"
+              className="text-slate-500 hover:text-[#0A66C2] font-semibold text-xs 2xl:text-sm ml-1 cursor-pointer focus-visible:outline-none"
             >
               {isExpanded ? " ver menos" : " ...ver más"}
             </button>
@@ -225,7 +225,7 @@ export default function LinkedInCard({
               {hashtags.map((tag, idx) => (
                 <span
                   key={idx}
-                  className="text-xs font-semibold text-[#0A66C2] hover:underline cursor-pointer"
+                  className="text-xs 2xl:text-sm font-semibold text-[#0A66C2] hover:underline cursor-pointer"
                 >
                   {tag.startsWith("#") ? tag : `#${tag}`}
                 </span>
@@ -238,19 +238,19 @@ export default function LinkedInCard({
         <div className="px-4 py-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-400">
           <div className="flex items-center gap-1.5">
             <div className="flex -space-x-1 items-center">
-              <span className="w-4 h-4 rounded-full bg-[#0A66C2] flex items-center justify-center text-white text-[9px]">
+              <span className="w-4 h-4 rounded-full bg-[#0A66C2] flex items-center justify-center text-white text-[0.625rem]">
                 👍
               </span>
-              <span className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[9px]">
+              <span className="w-4 h-4 rounded-full bg-emerald-600 flex items-center justify-center text-white text-[0.625rem]">
                 👏
               </span>
-              <span className="w-4 h-4 rounded-full bg-rose-500 flex items-center justify-center text-white text-[9px]">
+              <span className="w-4 h-4 rounded-full bg-rose-500 flex items-center justify-center text-white text-[0.625rem]">
                 ❤️
               </span>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">Reacciones simuladas</span>
+            <span className="text-xs text-slate-500 font-medium">Reacciones simuladas</span>
           </div>
-          <span className="text-[11px] text-slate-400">0 comentarios • 0 compartidos</span>
+          <span className="text-xs text-slate-400">0 comentarios • 0 compartidos</span>
         </div>
 
         {/* Social Action Buttons */}
@@ -276,9 +276,9 @@ export default function LinkedInCard({
       </div>
 
       {/* Metrics & Action Bar */}
-      <div className="flex items-center justify-between gap-4 px-1">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-1 pt-1">
         {/* Character gauge */}
-        <div className="flex items-center gap-2 text-xs">
+        <div className="flex items-center gap-2 text-xs shrink-0">
           <span className="font-semibold text-slate-600">
             {charCount.toLocaleString()} / 3.000 caracteres
           </span>
@@ -289,19 +289,19 @@ export default function LinkedInCard({
                 : "bg-slate-100 text-slate-600 border-slate-200"
             }`}
           >
-            {isOptimalLength ? "Longitud óptima LinkedIn" : charCount < 500 ? "Breve" : "Extenso"}
+            {isOptimalLength ? "Longitud óptima" : charCount < 500 ? "Breve" : "Extenso"}
           </span>
         </div>
 
         {/* Quick Toolbar */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 justify-start sm:justify-end">
           {onDelete && (
             <button
               onClick={onDelete}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-rose-200"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer border border-rose-200 shadow-2xs"
               title="Borrar borrador y volver a un estado limpio para generar un nuevo post"
             >
-              <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+              <Trash2 className="h-3.5 w-3.5 text-rose-500 shrink-0" />
               <span>Descartar</span>
             </button>
           )}
@@ -309,10 +309,10 @@ export default function LinkedInCard({
           {onEdit && (
             <button
               onClick={onEdit}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-brand-charcoal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-brand-charcoal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200 shadow-2xs"
               title="Editar borrador manualmente"
             >
-              <Edit2 className="h-3.5 w-3.5 text-slate-500" />
+              <Edit2 className="h-3.5 w-3.5 text-slate-500 shrink-0" />
               <span>Editar</span>
             </button>
           )}
@@ -320,21 +320,21 @@ export default function LinkedInCard({
           {onSaveDraft && (
             <button
               onClick={onSaveDraft}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200 shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200 shadow-xs"
               title={isEditMode ? "Guardar cambios y volver al historial" : "Guardar como borrador en el historial"}
             >
-              <Bookmark className="h-3.5 w-3.5 text-slate-600" />
-              <span>{isEditMode ? "Guardar cambios" : "Guardar borrador"}</span>
+              <Bookmark className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+              <span>{isEditMode ? "Guardar" : "Borrador"}</span>
             </button>
           )}
 
           {onSchedule && (
             <button
               onClick={onSchedule}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-brand-charcoal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200 shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-brand-charcoal hover:bg-slate-100 rounded-lg transition-colors cursor-pointer border border-slate-200 shadow-xs"
               title="Programar publicación en fecha y hora"
             >
-              <Calendar className="h-3.5 w-3.5 text-slate-600" />
+              <Calendar className="h-3.5 w-3.5 text-slate-600 shrink-0" />
               <span>Programar</span>
             </button>
           )}
@@ -343,11 +343,11 @@ export default function LinkedInCard({
             <button
               onClick={onPublish}
               disabled={isPublishing}
-              className="flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-brand-teal hover:bg-brand-teal-dark rounded-lg transition-colors cursor-pointer shadow-xs disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 sm:px-4 py-1.5 text-xs font-bold text-white bg-brand-teal hover:bg-brand-teal-dark rounded-lg transition-colors cursor-pointer shadow-xs disabled:opacity-50 shrink-0"
               title="Publicar inmediatamente en LinkedIn"
             >
-              <Share2 className="h-3.5 w-3.5" />
-              <span>{isPublishing ? "Publicando..." : "Publicar en LinkedIn"}</span>
+              <Share2 className="h-3.5 w-3.5 shrink-0" />
+              <span>{isPublishing ? "Publicando..." : "Publicar"}</span>
             </button>
           )}
         </div>

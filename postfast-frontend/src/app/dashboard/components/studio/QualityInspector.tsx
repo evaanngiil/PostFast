@@ -76,10 +76,10 @@ export default function QualityInspector({
               <ShieldCheck className="h-4 w-4" />
             </div>
             <div className="flex flex-col">
-              <span className="text-xs font-bold text-brand-charcoal uppercase tracking-wider">
+              <span className="text-xs 2xl:text-sm font-bold text-brand-charcoal uppercase tracking-wider">
                 Control de calidad
               </span>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-xs text-slate-400">
                 {hasAudited ? "Auditoría factual y cumplimiento normativo" : "Pendiente de ejecución del pipeline"}
               </span>
             </div>
@@ -88,18 +88,18 @@ export default function QualityInspector({
           <div className="flex items-baseline gap-1 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
             {qualityScore !== null ? (
               <>
-                <span className="text-lg font-extrabold text-brand-charcoal">{qualityScore}</span>
-                <span className="text-[10px] font-bold text-slate-400">/ 100</span>
+                <span className="text-lg 2xl:text-xl font-extrabold text-brand-charcoal">{qualityScore}</span>
+                <span className="text-[0.6875rem] 2xl:text-xs font-bold text-slate-400">/ 100</span>
               </>
             ) : (
-              <span className="text-xs font-bold text-slate-400 font-mono">-- / 100</span>
+              <span className="text-xs 2xl:text-sm font-bold text-slate-400 font-mono">-- / 100</span>
             )}
           </div>
         </div>
 
         {/* Verification Badges Grid */}
-        <div className="grid grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-2 mt-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
             {isFactCheckPassed === true ? (
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
             ) : isFactCheckPassed === false ? (
@@ -108,14 +108,14 @@ export default function QualityInspector({
               <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             )}
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-bold text-slate-700 truncate">Verificación CRAG</span>
-              <span className="text-[9px] text-slate-400">
+              <span className="text-xs font-bold text-slate-700 truncate">Verificación CRAG</span>
+              <span className="text-[0.6875rem] 2xl:text-xs text-slate-400">
                 {factCheck ? (isFactCheckPassed ? "Datos contrastados" : "Discrepancias") : "En espera de post"}
               </span>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80">
+          <div className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-slate-50 border border-slate-200/80 min-w-0">
             {isSafetyApproved === true ? (
               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
             ) : isSafetyApproved === false ? (
@@ -124,8 +124,8 @@ export default function QualityInspector({
               <Clock className="h-3.5 w-3.5 text-slate-400 shrink-0" />
             )}
             <div className="flex flex-col min-w-0">
-              <span className="text-[11px] font-bold text-slate-700 truncate">Seguridad de marca</span>
-              <span className="text-[9px] text-slate-400">
+              <span className="text-xs font-bold text-slate-700 truncate">Seguridad de marca</span>
+              <span className="text-[0.6875rem] 2xl:text-xs text-slate-400">
                 {safetyReport ? (isSafetyApproved ? "Do's & Don'ts OK" : "Infracción detectada") : "En espera de post"}
               </span>
             </div>
@@ -153,41 +153,41 @@ export default function QualityInspector({
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <div className="flex items-center gap-2">
               <FileCheck className="h-4 w-4 text-brand-teal" />
-              <h3 className="text-xs font-bold uppercase tracking-wider text-brand-charcoal">
+              <h3 className="text-xs 2xl:text-sm font-bold uppercase tracking-wider text-brand-charcoal">
                 Pipeline de gobernanza
               </h3>
             </div>
-            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
+            <span className="text-[0.6875rem] 2xl:text-xs font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200/80">
               Paso 3: Auditoría
             </span>
           </div>
 
-          <div className="flex flex-col gap-2.5 text-xs">
-            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200/60">
-              <FileCheck className="h-4 w-4 text-brand-teal shrink-0 mt-0.5" />
+          <div className="flex flex-col gap-2.5 2xl:gap-3.5 text-xs 2xl:text-sm">
+            <div className="flex items-start gap-2.5 p-2.5 2xl:p-3.5 rounded-lg bg-slate-50 border border-slate-200/60">
+              <FileCheck className="h-4 w-4 2xl:h-4.5 2xl:w-4.5 text-brand-teal shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-slate-800 text-xs">Contraste factual RAG</span>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                <span className="font-bold text-slate-800 text-xs 2xl:text-sm">Contraste factual RAG</span>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Verifica que afirmaciones numéricas o estratégicas provengan directamente de tus documentos indexados.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200/60">
-              <ShieldCheck className="h-4 w-4 text-brand-teal shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 p-2.5 2xl:p-3.5 rounded-lg bg-slate-50 border border-slate-200/60">
+              <ShieldCheck className="h-4 w-4 2xl:h-4.5 2xl:w-4.5 text-brand-teal shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-slate-800 text-xs">Filtro de directivas (Do's y Don'ts)</span>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                <span className="font-bold text-slate-800 text-xs 2xl:text-sm">Filtro de directivas (Do's y Don'ts)</span>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   Evalúa las restricciones de tono y terminología de tu empresa para evitar riesgos de reputación.
                 </p>
               </div>
             </div>
 
-            <div className="flex items-start gap-2.5 p-2.5 rounded-lg bg-slate-50 border border-slate-200/60">
-              <CheckCircle2 className="h-4 w-4 text-brand-teal shrink-0 mt-0.5" />
+            <div className="flex items-start gap-2.5 p-2.5 2xl:p-3.5 rounded-lg bg-slate-50 border border-slate-200/60">
+              <CheckCircle2 className="h-4 w-4 2xl:h-4.5 2xl:w-4.5 text-brand-teal shrink-0 mt-0.5" />
               <div>
-                <span className="font-bold text-slate-800 text-xs">Aprobación humana (HITL)</span>
-                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                <span className="font-bold text-slate-800 text-xs 2xl:text-sm">Aprobación humana (HITL)</span>
+                <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                   El orquestador detendrá el flujo para que revises el borrador antes de cualquier publicación.
                 </p>
               </div>
@@ -217,34 +217,34 @@ export default function QualityInspector({
               placeholder="Instrucciones de mejora (ej: hazlo más directo, enfatiza el dato de crecimiento, acorta el primer párrafo)..."
               className="w-full text-xs p-2.5 rounded-lg border border-amber-300 bg-white text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500 min-h-[70px]"
             />
-            <div className="flex items-center gap-2 justify-between">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 pt-1">
               {onResetStudio ? (
                 <button
                   type="button"
                   onClick={onResetStudio}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold shadow-xs cursor-pointer"
+                  className="flex items-center justify-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold shadow-xs cursor-pointer shrink-0"
                   title="Descartar borrador y empezar de nuevo con un estado limpio"
                 >
-                  <Trash2 className="h-3 w-3 text-rose-500" />
+                  <Trash2 className="h-3 w-3 text-rose-500 shrink-0" />
                   <span>Descartar</span>
                 </button>
               ) : <div />}
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                 <button
                   onClick={() => onSubmitFeedback(false)}
                   disabled={isSubmittingFeedback || !userFeedback.trim()}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-xs disabled:opacity-40 cursor-pointer"
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold shadow-xs disabled:opacity-40 cursor-pointer whitespace-nowrap"
                 >
-                  <RotateCw className="h-3 w-3" />
-                  <span>Aplicar ajustes</span>
+                  <RotateCw className="h-3 w-3 shrink-0" />
+                  <span>Ajustar</span>
                 </button>
                 <button
                   onClick={() => onSubmitFeedback(true)}
                   disabled={isSubmittingFeedback}
-                  className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-40 cursor-pointer"
+                  className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-40 cursor-pointer whitespace-nowrap"
                 >
-                  <Check className="h-3 w-3" />
-                  <span>{isEditMode ? "Aprobar y guardar cambios" : "Aprobar publicación"}</span>
+                  <Check className="h-3 w-3 shrink-0" />
+                  <span>{isEditMode ? "Aprobar cambios" : "Aprobar"}</span>
                 </button>
               </div>
             </div>
@@ -273,7 +273,7 @@ export default function QualityInspector({
           </button>
 
           {activeAccordion === "fact" && (
-            <div className="px-4 pb-4 pt-1 flex flex-col gap-2 border-t border-slate-100 max-h-64 overflow-y-auto">
+            <div className="px-4 pb-4 pt-1 flex flex-col gap-2 border-t border-slate-100 max-h-64 overflow-y-auto custom-scroll">
               <p className="text-[11px] text-slate-500 leading-normal">{factCheck.summary}</p>
               {factCheck.claims.length === 0 ? (
                 <span className="text-xs text-slate-400 italic py-2 text-center">
@@ -340,7 +340,7 @@ export default function QualityInspector({
           </button>
 
           {activeAccordion === "safety" && (
-            <div className="px-4 pb-4 pt-1 flex flex-col gap-2.5 border-t border-slate-100">
+            <div className="px-4 pb-4 pt-1 flex flex-col gap-2.5 border-t border-slate-100 max-h-64 overflow-y-auto custom-scroll">
               {safetyReport.issues.length === 0 ? (
                 <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-800 text-xs flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />

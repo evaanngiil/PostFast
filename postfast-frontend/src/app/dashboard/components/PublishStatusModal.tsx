@@ -8,7 +8,7 @@ interface PublishStatusModalProps {
 /** Modal de estado de la publicación en LinkedIn (cargando / éxito / error). */
 export default function PublishStatusModal({ status, onClose }: PublishStatusModalProps) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-3 sm:p-4">
       <style>{`
         @keyframes checkmarkScale {
           0% { transform: scale(0); opacity: 0; }

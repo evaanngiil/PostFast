@@ -37,10 +37,10 @@ export default function DocContentModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 animate-in fade-in duration-150">
-      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-4 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl overflow-hidden border border-slate-200 flex flex-col max-h-[88dvh] h-[85vh]">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="flex items-center justify-between px-4 sm:px-5 py-3.5 sm:py-4 border-b border-slate-100 bg-slate-50/50">
           <div className="flex items-center gap-2.5">
             <FileText className="h-4 w-4 text-brand-teal" />
             <h3 className="font-bold text-slate-800 text-sm">
@@ -59,7 +59,7 @@ export default function DocContentModal({
         </div>
 
         {/* Content Viewer */}
-        <div className="p-5 flex-1 overflow-y-auto bg-slate-50/30">
+        <div className="p-4 sm:p-5 flex-1 overflow-y-auto bg-slate-50/30 custom-scroll">
           {docContentLoading ? (
             <div className="h-full flex flex-col items-center justify-center gap-3 text-slate-500">
               <Loader2 className="h-6 w-6 animate-spin text-brand-teal" />
