@@ -8,7 +8,6 @@ def test_search_knowledge_hybrid_keyword_fallback():
     mock_rpc.execute.return_value = MagicMock(data=[])
     mock_supabase.rpc.return_value = mock_rpc
 
-    mock_table = MagicMock()
     mock_query = MagicMock()
     mock_query.select.return_value = mock_query
     mock_query.eq.return_value = mock_query

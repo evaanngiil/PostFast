@@ -1,5 +1,5 @@
 from unittest.mock import patch, MagicMock
-from src.services.realtime_service import broadcast_task_status_sync, broadcast_task_status, _get_sync_client, _get_async_client
+from src.services.realtime_service import broadcast_task_status_sync, _get_sync_client, _get_async_client
 import pytest
 
 
