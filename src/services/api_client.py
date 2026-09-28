@@ -606,7 +606,7 @@ Esta es la directriz base utilizada por el agente de Inteligencia Artificial par
             
             payload = {
                 "org_urn": org_urn,
-                "name": base_name,
+                "name": base_names[0],
                 "description": "Directrices base obligatorias de tono de voz, estructura y formato del post.",
                 "markdown_content": default_markdown
             }

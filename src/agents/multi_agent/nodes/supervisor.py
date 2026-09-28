@@ -40,21 +40,6 @@ def supervisor_router_logic(state: AgentState) -> Union[str, List[str]]:
         logger.info("-> human_review (edición rápida completada, saltando validaciones)")
         return "human_review"
 
-    # ===== GUARDA DE ESTADO HUÉRFANO =====
-    # Si hay draft_post pero edit_mode=False y no hay feedback activo, el estado
-    # proviene de un checkpoint obsoleto de una generación anterior. La purga en
-    # tasks.py debería haberlo limpiado, pero esta guarda actúa como red de seguridad.
-    if (
-        state.get("draft_post")
-        and not state.get("edit_mode")
-        and not state.get("user_feedback")
-        and not state.get("last_draft_content")
-    ):
-        logger.warning(
-            "-> [ESTADO HUÉRFANO DETECTADO] draft_post presente sin edit_mode ni feedback. "
-            "Forzando flujo de generación limpio desde content_writer."
-        )
-        return "content_writer"
 
     # ===== EDICIÓN DIRIGIDA POR FEEDBACK HUMANO (HITL) =====
     # Tras la revisión humana con feedback, human_review limpia draft_post y
